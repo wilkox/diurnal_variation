@@ -1,0 +1,177 @@
+---
+title: Compare accuracy of microbial matching methods
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(broom)
+library(gglmannotate)
+```
+
+The aim of this analysis is to collate the results of microbial matching using
+the three methods (SourceTracker, Watanabe/Canberra, and Bray-Curtis). I want
+to produce three things: a figure for the manuscript comparing the methods;
+summary statistics of the accuracy rates for the three methods; and statistical
+tests comparing the rates between the methods.
+
+## Load and collate matching results
+
+```{r}
+st <- read_tsv("../st_matching/st_matches.tsv") %>%
+  left_join(read_tsv("../metadata/metadata.tsv") %>%
+                       select(timepoint, day, time) %>%
+                       distinct() %>%
+                       rename_all(~ str_c("source_", .))) %>%
+  rename_all(~ str_replace(., "sink", "query")) %>%
+  rename_all(~ str_replace(., "source", "reference")) %>%
+  mutate(method = "SourceTracker") %>%
+  mutate(reference_site = "pooled") %>%
+  select(method, query_sample, query_site, query_type, query_location,
+         query_day, query_time, query_timepoint, reference_site,
+         reference_location, reference_day, reference_time, reference_timepoint,
+         is_accurate = accurate)
+
+watanabe <- read_tsv("../watanabe_matching/watanabe_matches.tsv") %>%
+  mutate(method = "Canberra distance") %>%
+  select(method, query_sample, query_site, query_type, query_location,
+         query_day, query_time, query_timepoint, reference_site,
+         reference_location, reference_day, reference_time, reference_timepoint,
+         is_accurate)
+
+bc <- read_tsv("../bc_matching/bc_matches.tsv") %>%
+  mutate(method = "Bray-Curtis dissimilarity") %>%
+  select(method, query_sample, query_site, query_type, query_location,
+         query_day, query_time, query_timepoint, reference_site,
+         reference_location, reference_day, reference_time, reference_timepoint,
+         is_accurate)
+
+matching <- bind_rows(st, watanabe, bc) %>%
+  mutate(query_hours = (24 * (query_day - 1)) + if_else(query_time == "morning", 0, 12)) %>%
+  mutate(reference_hours = (24 * (reference_day - 1)) + if_else(reference_time == "morning", 0, 12)) %>%
+  mutate(delay = query_hours - reference_hours)
+```
+
+## Prepare matching accuracy figure
+
+```{r}
+matching %>%
+  group_by(method, query_site, delay) %>%
+  summarise(accuracy = sum(is_accurate) / n()) %>%
+  ungroup() %>%
+  mutate_at("accuracy", ~ . * 100) %>%
+  mutate_at("query_site", str_to_sentence) %>%
+  ggplot(aes(x = delay, y = accuracy, colour = method)) +
+    geom_point() +
+    geom_smooth(method = "loess") +
+    facet_wrap(~ query_site, nrow = 1) +
+    labs(x = "Sampling delay (hours)",
+         y = "Accuracy (%)",
+         colour = "Method") +
+    theme_classic()
+
+ggsave("matching_figure.png", width = 8, height = 3, dpi = 300)
+```
+
+I want to know: for how many combinations of query site and sampling delay is
+the Canberra method the best-performing?
+
+```{r}
+matching %>%
+  group_by(method, query_site, delay) %>%
+  summarise(accuracy = sum(is_accurate) / n()) %>%
+  ungroup() %>%
+  group_by(query_site, delay) %>%
+  mutate(is_winner = accuracy == max(accuracy)) %>%
+  ungroup() %>%
+  filter(is_winner) %>%
+  select(-is_winner) %>%
+  count(method)
+```
+
+## Accuracy rates by method and surface type
+
+```{r}
+matching %>%
+  group_by(method, query_site, delay) %>%
+  summarise(accuracy = sum(is_accurate) / n()) %>%
+  ungroup() %>%
+  left_join(read_tsv("../metadata/metadata.tsv") %>% 
+              select(site, type) %>%
+              distinct() %>%
+              rename_all(~ str_c("query_", .))) %>%
+  group_by(method, query_type) %>%
+  summarise(mean_accuracy = mean(accuracy), sd_accuracy = sd(accuracy)) %>%
+  ungroup()
+```
+
+## Effect of sampling delay on matching accuracy
+
+First, I'm going to plot the relationship between absolute sampling delay and
+matching accuracy. I'm only interested in Canberra matching going forward.
+
+```{r}
+matching %>%
+  filter(method == "Canberra distance") %>%
+  mutate_at("delay", abs) %>%
+  group_by(query_site, delay) %>%
+  summarise(accuracy = sum(is_accurate) / n()) %>%
+  ungroup() %>%
+  mutate_at("accuracy", ~ . * 100) %>%
+  mutate_at("query_site", str_to_sentence) %>%
+  ggplot(aes(x = delay, y = accuracy)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    facet_wrap(~ query_site, ncol = 1, scales = "free_y") +
+    geom_lmannotate() +
+    labs(title = "Relationship between absolute sampling delay and matching accuracy",
+         x = "Sampling delay (hours)",
+         y = "Matching accuracy (%)")
+```
+
+I'll use Spearman's rho to test for a significant relationship between absolute
+sampling delay and matching accuracy across all sites.
+
+```{r}
+matching %>%
+  filter(method == "Canberra distance") %>%
+  select(query_site, delay, is_accurate) %>%
+  mutate_at("delay", abs) %>%
+  group_by(query_site, delay) %>%
+  summarise(accuracy = sum(is_accurate) / n()) %>%
+  ungroup() %>%
+  arrange(delay) %>%
+  nest(data = c(delay, accuracy)) %>%
+  mutate(cor = map(data, ~ cor.test(.x$accuracy, .x$delay, method = "spearman"))) %>%
+  mutate_at("cor", map, tidy) %>%
+  select(-data) %>%
+  unnest(cor) %>%
+  mutate(significant = p.value < 0.05)
+```
+
+## Test for significant difference in accuracy by method for each query type
+
+```{r}
+matching %>%
+  count(is_accurate, query_type, method) %>%
+  spread(is_accurate, n) %>%
+  nest(ct = c(method, `FALSE`, `TRUE`)) %>%
+  mutate_at("ct", map, column_to_rownames, "method") %>%
+  mutate_at("ct", map, as.matrix) %>%
+  mutate(cs = map(ct, chisq.test)) %>%
+  select(-ct) %>%
+  mutate_at("cs", map, tidy) %>%
+  unnest(cs) %>%
+  mutate(is_significant = p.value < 0.05)
+```

@@ -1,0 +1,136 @@
+---
+title: Prepare SourceTracker inputs for runs to determine sources of surface microbiota
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r}
+library(tidyverse)
+library(purrr)
+library(fs)
+```
+
+This SourceTracker run will predict sources for household and public surface
+samples. The aim of this is two-fold: to confirm skin as the major source for
+surface microbiota, and to exclude negative control samples as a likely source.
+
+For each sink sample, potential sources will be within-location occupant skin,
+the negative control samples, and unknown. To minimise the total number of
+runs, only sources from the same time point as the sink sample will be
+considered.
+
+# Prepare map files
+
+I'll prepare a map file for each run. Each run represents a single time
+location and time point. The sink samples for the run are all the surface
+samples for that location and time point, while the source samples are a
+combination of the skin samples from that location and time point and the
+negative control pool.
+
+Each map file wants three columns: #SampleID, Env, SourceSink.
+
+```{r}
+if (! dir_exists("maps")) {
+  dir_create("maps")
+} else {
+  dir_delete("maps")
+  dir_create("maps")
+}
+
+metadata <- read_tsv("../metadata/metadata.tsv")
+control_metadata <- read_tsv("../metadata/negative_control_metadata.tsv")
+
+skin_sources <- metadata %>%
+  filter(type == "skin") %>%
+  select(sample, type, location, timepoint) %>%
+  rename_all(~ str_c("source_", .x))
+
+control_sources <- control_metadata %>%
+  select(source_sample = sample) %>%
+  mutate(source_type = "control")
+
+sinks <- metadata %>%
+  filter(! type == "skin") %>%
+  select(sample, type, location, timepoint) %>%
+  rename_all(~ str_c("sink_", .x))
+
+runs <- metadata %>%
+  distinct(location, timepoint) %>%
+  mutate(sources = list(skin_sources)) %>%
+  mutate(sources = map2(sources, location, ~ filter(.x, source_location == .y))) %>%
+  mutate(sources = map2(sources, timepoint, ~ filter(.x, source_timepoint == .y))) %>%
+  mutate(sources = map(sources, ~ select(.x, source_sample, source_type))) %>%
+  mutate(skin_sources = map_dbl(sources, nrow)) %>%
+  filter(skin_sources > 0) %>%
+  select(-skin_sources) %>%
+  mutate(sources = map(sources, ~ bind_rows(.x, control_sources))) %>%
+  mutate(sinks = list(sinks)) %>%
+  mutate(sinks = map2(sinks, location, ~ filter(.x, sink_location == .y))) %>%
+  mutate(sinks = map2(sinks, timepoint, ~ filter(.x, sink_timepoint == .y))) %>%
+  mutate(sink_count = map_dbl(sinks, nrow)) %>%
+  filter(sink_count > 0) %>%
+  select(-sink_count) %>%
+  mutate(sources = map(sources, ~ rename(.x, "#SampleID" = source_sample, Env = source_type))) %>%
+  mutate(sources = map(sources, ~ mutate(.x, SourceSink = "source"))) %>%
+  mutate(sinks = map(sinks, ~ select(.x, "#SampleID" = sink_sample, Env = sink_type))) %>%
+  mutate(sinks = map(sinks, ~ mutate(.x, SourceSink = "sink"))) %>%
+  mutate(map = map2(sources, sinks, bind_rows)) %>%
+  select(-sources, -sinks) %>%
+  mutate(run = str_c(location, timepoint, sep = "_")) %>%
+  mutate_at("run", str_replace, " ", "-") %>%
+  mutate(map_path = path("maps", run, ext = "tsv"))
+
+walk2(runs$map, runs$map_path, write_tsv)
+```
+
+# OTU tables
+
+Produce the OTU tables. Anything with an abundance smaller than 0.1% will be
+discarded.
+
+SourceTracker wants the OTH tables in a very specific format: the first line of
+the file must be "#OTU TABLE"; the first column must be named "#OTU ID"; it
+wants species in rows, samples in columns; and abundances must be given as
+whole-number counts (I'll multiply the relative abundances by 1000 to achieve 
+this).
+
+```{r}
+if (! dir_exists("OTU_tables")) {
+  dir_create("OTU_tables")
+} else {
+  dir_delete("OTU_tables")
+  dir_create("OTU_tables")
+}
+
+abundances <- read_tsv("../abundances/species_abundances_decontaminated.tsv") %>%
+  mutate(abundance = floor(1000 * abundance)) %>%
+  filter(abundance > 0) %>%
+  select(sample, species, abundance)
+
+negative_abundances <- read_tsv("../abundances/control_species_abundances.tsv") %>%
+  mutate(abundance = floor(1000 * abundance)) %>%
+  filter(abundance > 0)
+
+abundances <- bind_rows(abundances, negative_abundances)
+
+OTU_tables <- runs %>%
+  mutate(samples = map(map, pull, "#SampleID")) %>%
+  select(run, samples) %>%
+  mutate(OTU_table = list(abundances)) %>%
+  mutate(OTU_table = map2(OTU_table, samples, ~ filter(.x, sample %in% .y))) %>%
+  mutate(OTU_table = map(OTU_table, ~ .x %>% 
+                         select(sample, species, abundance) %>%
+                         spread(sample, abundance, fill = 0) %>%
+                         rename("#OTU ID" = species)
+                         )) %>%
+  mutate(OTU_table_path = path("OTU_tables", run, ext = "tsv"))
+
+
+walk(OTU_tables$OTU_table_path, ~ write_tsv(tibble("#OTU TABLE" = character()), .x))
+walk2(OTU_tables$OTU_table, OTU_tables$OTU_table_path, write_tsv, append =
+      TRUE, col_names = TRUE)
+```

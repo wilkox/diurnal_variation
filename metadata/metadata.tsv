@@ -1,0 +1,399 @@
+sample	site	type	location	day	time	timepoint
+SL336563	right palm	skin	residence 3	10	morning	19
+SL336564	left palm	skin	residence 3	10	morning	19
+SL336565	bed headboard	household surface	residence 3	10	morning	19
+SL336566	door knob	household surface	residence 3	10	morning	19
+SL336567	park/campus handrail	public surface	residence 3	10	morning	19
+SL336568	right palm	skin	residence 3	9	morning	17
+SL336569	subway exit handrail	public surface	residence 3	10	morning	19
+SL336570	left palm	skin	residence 3	9	morning	17
+SL336571	subway exit handrail	public surface	residence 3	10	evening	20
+SL336572	bed headboard	household surface	residence 3	9	morning	17
+SL336573	subway exit handrail	public surface	residence 3	9	evening	18
+SL336574	door knob	household surface	residence 3	9	morning	17
+SL336575	bed headboard	household surface	residence 3	10	evening	20
+SL336576	subway exit handrail	public surface	residence 3	9	morning	17
+SL336577	bed headboard	household surface	residence 3	9	evening	18
+SL336578	park/campus handrail	public surface	residence 3	9	morning	17
+SL336579	door knob	household surface	residence 3	9	evening	18
+SL336580	park/campus handrail	public surface	residence 3	9	evening	18
+SL336581	park/campus handrail	public surface	residence 3	10	evening	20
+SL336582	right palm	skin	residence 3	10	evening	20
+SL336583	right palm	skin	residence 3	9	evening	18
+SL336584	left palm	skin	residence 3	9	evening	18
+SL336585	left palm	skin	residence 3	10	evening	20
+SL336586	door knob	household surface	residence 3	10	evening	20
+SL336588	left palm	skin	residence 1	3	evening	6
+SL336589	door knob	household surface	residence 1	3	evening	6
+SL336591	right palm	skin	residence 1	4	morning	7
+SL336595	bed headboard	household surface	residence 1	3	evening	6
+SL336596	park/campus handrail	public surface	residence 1	4	morning	7
+SL336597	door knob	household surface	residence 1	4	morning	7
+SL336598	subway exit handrail	public surface	residence 1	3	evening	6
+SL336600	left palm	skin	residence 1	4	morning	7
+SL336612	bed headboard	household surface	residence 1	5	evening	10
+SL336613	door knob	household surface	residence 1	5	evening	10
+SL336614	left palm	skin	residence 1	6	evening	12
+SL336615	right palm	skin	residence 1	7	evening	14
+SL336616	door knob	household surface	residence 1	8	evening	16
+SL336619	subway exit handrail	public surface	residence 1	5	evening	10
+SL336620	left palm	skin	residence 1	5	evening	10
+SL336621	door knob	household surface	residence 1	6	evening	12
+SL336622	left palm	skin	residence 1	7	evening	14
+SL336623	bed headboard	household surface	residence 1	8	evening	16
+SL336626	park/campus handrail	public surface	residence 1	5	evening	10
+SL336627	right palm	skin	residence 1	5	evening	10
+SL336628	bed headboard	household surface	residence 1	6	evening	12
+SL336629	bed headboard	household surface	residence 1	7	evening	14
+SL336630	park/campus handrail	public surface	residence 1	8	evening	16
+SL336631	park/campus handrail	public surface	residence 4	10	morning	19
+SL336633	park/campus handrail	public surface	residence 1	4	evening	8
+SL336634	left palm	skin	residence 1	6	morning	11
+SL336635	subway exit handrail	public surface	residence 1	7	morning	13
+SL336636	door knob	household surface	residence 1	7	evening	14
+SL336637	subway exit handrail	public surface	residence 1	8	evening	16
+SL336640	subway exit handrail	public surface	residence 1	4	evening	8
+SL336641	right palm	skin	residence 1	6	morning	11
+SL336642	park/campus handrail	public surface	residence 1	7	morning	13
+SL336643	door knob	household surface	residence 1	8	morning	15
+SL336644	left palm	skin	residence 1	9	morning	17
+SL336645	bed headboard	household surface	residence 1	10	morning	19
+SL336646	door knob	household surface	residence 1	5	morning	9
+SL336647	door knob	household surface	residence 1	6	morning	11
+SL336648	door knob	household surface	residence 1	7	morning	13
+SL336649	bed headboard	household surface	residence 1	8	morning	15
+SL336650	right palm	skin	residence 1	9	morning	17
+SL336651	door knob	household surface	residence 1	10	morning	19
+SL336652	bed headboard	household surface	residence 1	5	morning	9
+SL336653	bed headboard	household surface	residence 1	6	morning	11
+SL336654	bed headboard	household surface	residence 1	7	morning	13
+SL336655	left palm	skin	residence 1	8	morning	15
+SL336656	door knob	household surface	residence 1	9	morning	17
+SL336657	right palm	skin	residence 1	10	morning	19
+SL336658	left palm	skin	residence 1	5	morning	9
+SL336659	park/campus handrail	public surface	residence 1	6	morning	11
+SL336660	left palm	skin	residence 1	7	morning	13
+SL336661	right palm	skin	residence 1	8	morning	15
+SL336662	bed headboard	household surface	residence 1	9	morning	17
+SL336663	left palm	skin	residence 1	10	morning	19
+SL336664	bed headboard	household surface	residence 1	4	evening	8
+SL336665	subway exit handrail	public surface	residence 1	6	morning	11
+SL336666	right palm	skin	residence 1	7	morning	13
+SL336667	park/campus handrail	public surface	residence 1	8	morning	15
+SL336668	park/campus handrail	public surface	residence 1	9	morning	17
+SL336669	bed headboard	household surface	residence 1	9	evening	18
+SL336670	right palm	skin	residence 1	5	morning	9
+SL336671	park/campus handrail	public surface	residence 1	6	evening	12
+SL336672	subway exit handrail	public surface	residence 1	7	evening	14
+SL336673	subway exit handrail	public surface	residence 1	8	morning	15
+SL336674	subway exit handrail	public surface	residence 1	9	morning	17
+SL336675	door knob	household surface	residence 1	9	evening	18
+SL336676	subway exit handrail	public surface	residence 1	5	morning	9
+SL336677	subway exit handrail	public surface	residence 1	6	evening	12
+SL336678	subway exit handrail	public surface	residence 1	1	morning	1
+SL336679	left palm	skin	residence 1	8	evening	16
+SL336680	park/campus handrail	public surface	residence 1	9	evening	18
+SL336681	right palm	skin	residence 1	9	evening	18
+SL336682	park/campus handrail	public surface	residence 1	5	morning	9
+SL336683	right palm	skin	residence 1	6	evening	12
+SL336684	park/campus handrail	public surface	residence 1	7	evening	14
+SL336685	right palm	skin	residence 1	8	evening	16
+SL336686	subway exit handrail	public surface	residence 1	9	evening	18
+SL336687	left palm	skin	residence 1	9	evening	18
+SL336688	left palm	skin	residence 3	1	morning	1
+SL336689	left palm	skin	residence 3	2	morning	3
+SL336690	right palm	skin	residence 3	3	morning	5
+SL336691	right palm	skin	residence 3	6	morning	11
+SL336692	right palm	skin	residence 3	4	morning	7
+SL336693	right palm	skin	residence 3	5	morning	9
+SL336694	right palm	skin	residence 3	7	morning	13
+SL336695	right palm	skin	residence 3	8	morning	15
+SL336696	right palm	skin	residence 3	1	morning	1
+SL336697	right palm	skin	residence 3	2	morning	3
+SL336698	left palm	skin	residence 3	3	morning	5
+SL336699	left palm	skin	residence 3	4	morning	7
+SL336700	left palm	skin	residence 3	5	morning	9
+SL336701	left palm	skin	residence 3	6	morning	11
+SL336702	left palm	skin	residence 3	7	morning	13
+SL336703	left palm	skin	residence 3	8	morning	15
+SL336704	door knob	household surface	residence 3	1	morning	1
+SL336705	door knob	household surface	residence 3	2	morning	3
+SL336706	door knob	household surface	residence 3	3	morning	5
+SL336707	bed headboard	household surface	residence 3	4	morning	7
+SL336708	bed headboard	household surface	residence 3	5	morning	9
+SL336709	bed headboard	household surface	residence 3	6	morning	11
+SL336710	bed headboard	household surface	residence 3	7	morning	13
+SL336711	bed headboard	household surface	residence 3	8	morning	15
+SL336712	bed headboard	household surface	residence 3	1	morning	1
+SL336713	bed headboard	household surface	residence 3	2	morning	3
+SL336714	bed headboard	household surface	residence 3	3	morning	5
+SL336715	door knob	household surface	residence 3	4	morning	7
+SL336716	door knob	household surface	residence 3	5	morning	9
+SL336717	door knob	household surface	residence 3	6	morning	11
+SL336718	door knob	household surface	residence 3	7	morning	13
+SL336719	door knob	household surface	residence 3	8	morning	15
+SL336720	park/campus handrail	public surface	residence 3	1	morning	1
+SL336721	park/campus handrail	public surface	residence 3	2	morning	3
+SL336722	park/campus handrail	public surface	residence 3	3	evening	6
+SL336723	subway exit handrail	public surface	residence 3	4	morning	7
+SL336724	park/campus handrail	public surface	residence 3	5	morning	9
+SL336725	park/campus handrail	public surface	residence 3	6	morning	11
+SL336726	subway exit handrail	public surface	residence 3	7	morning	13
+SL336727	subway exit handrail	public surface	residence 3	8	morning	15
+SL336728	subway exit handrail	public surface	residence 3	1	morning	1
+SL336729	subway exit handrail	public surface	residence 3	2	morning	3
+SL336730	subway exit handrail	public surface	residence 3	3	evening	6
+SL336731	park/campus handrail	public surface	residence 3	4	morning	7
+SL336732	subway exit handrail	public surface	residence 3	5	morning	9
+SL336733	subway exit handrail	public surface	residence 3	6	morning	11
+SL336734	park/campus handrail	public surface	residence 3	7	morning	13
+SL336735	park/campus handrail	public surface	residence 3	8	morning	15
+SL336737	right palm	skin	residence 3	2	evening	4
+SL336738	subway exit handrail	public surface	residence 3	3	morning	5
+SL336739	park/campus handrail	public surface	residence 3	4	evening	8
+SL336741	park/campus handrail	public surface	residence 3	6	evening	12
+SL336742	subway exit handrail	public surface	residence 3	7	evening	14
+SL336743	right palm	skin	residence 3	8	evening	16
+SL336744	subway exit handrail	public surface	residence 3	1	evening	2
+SL336745	left palm	skin	residence 3	2	evening	4
+SL336746	park/campus handrail	public surface	residence 3	3	morning	5
+SL336747	subway exit handrail	public surface	residence 3	4	evening	8
+SL336748	park/campus handrail	public surface	residence 3	5	evening	10
+SL336749	subway exit handrail	public surface	residence 3	6	evening	12
+SL336750	park/campus handrail	public surface	residence 3	7	evening	14
+SL336751	left palm	skin	residence 3	8	evening	16
+SL336752	door knob	household surface	residence 3	1	evening	2
+SL336753	bed headboard	household surface	residence 3	2	evening	4
+SL336754	door knob	household surface	residence 3	3	evening	6
+SL336755	door knob	household surface	residence 3	4	evening	8
+SL336756	bed headboard	household surface	residence 3	5	evening	10
+SL336757	bed headboard	household surface	residence 3	6	evening	12
+SL336758	bed headboard	household surface	residence 3	7	evening	14
+SL336759	subway exit handrail	public surface	residence 3	8	evening	16
+SL336760	bed headboard	household surface	residence 3	1	evening	2
+SL336761	door knob	household surface	residence 3	2	evening	4
+SL336762	bed headboard	household surface	residence 3	3	evening	6
+SL336763	bed headboard	household surface	residence 3	4	evening	8
+SL336764	door knob	household surface	residence 3	5	evening	10
+SL336765	door knob	household surface	residence 3	6	evening	12
+SL336766	door knob	household surface	residence 3	7	evening	14
+SL336767	park/campus handrail	public surface	residence 3	8	evening	16
+SL336768	left palm	skin	residence 3	1	evening	2
+SL336769	subway exit handrail	public surface	residence 3	2	evening	4
+SL336770	left palm	skin	residence 3	3	evening	6
+SL336771	left palm	skin	residence 3	4	evening	8
+SL336772	right palm	skin	residence 3	5	evening	10
+SL336773	right palm	skin	residence 3	6	evening	12
+SL336774	right palm	skin	residence 3	7	evening	14
+SL336775	bed headboard	household surface	residence 3	8	evening	16
+SL336776	right palm	skin	residence 3	1	evening	2
+SL336777	park/campus handrail	public surface	residence 3	2	evening	4
+SL336778	right palm	skin	residence 3	3	evening	6
+SL336779	right palm	skin	residence 3	4	evening	8
+SL336780	subway exit handrail	public surface	residence 3	5	evening	10
+SL336781	left palm	skin	residence 3	6	evening	12
+SL336782	left palm	skin	residence 3	7	evening	14
+SL336783	door knob	household surface	residence 3	8	evening	16
+SL336794	left palm	skin	residence 1	1	morning	1
+SL336798	right palm	skin	residence 1	1	morning	1
+SL336799	door knob	household surface	residence 1	1	morning	1
+SL336801	bed headboard	household surface	residence 1	1	morning	1
+SL336804	park/campus handrail	public surface	residence 1	1	morning	1
+SL336817	park/campus handrail	public surface	residence 1	2	morning	3
+SL336819	subway exit handrail	public surface	residence 1	2	morning	3
+SL336821	right palm	skin	residence 1	1	evening	2
+SL336822	park/campus handrail	public surface	residence 1	2	evening	4
+SL336826	left palm	skin	residence 1	1	evening	2
+SL336827	right palm	skin	residence 1	2	evening	4
+SL336831	bed headboard	household surface	residence 1	1	evening	2
+SL336832	left palm	skin	residence 1	2	evening	4
+SL336834	door knob	household surface	residence 1	1	evening	2
+SL336835	subway exit handrail	public surface	residence 1	2	evening	4
+SL336839	park/campus handrail	public surface	residence 1	1	evening	2
+SL336840	bed headboard	household surface	residence 1	2	evening	4
+SL336842	door knob	household surface	residence 1	2	evening	4
+SL342547	left palm	skin	residence 1	3	morning	5
+SL342548	right palm	skin	residence 1	3	morning	5
+SL342549	door knob	household surface	residence 1	3	morning	5
+SL342550	bed headboard	household surface	residence 1	3	morning	5
+SL342551	park/campus handrail	public surface	residence 1	3	morning	5
+SL342552	subway exit handrail	public surface	residence 1	3	morning	5
+SL345570	bed headboard	household surface	residence 1	4	morning	7
+SL345903	park/campus handrail	public surface	residence 2	1	morning	1
+SL345904	right palm	skin	residence 2	2	morning	3
+SL345905	subway exit handrail	public surface	residence 2	3	morning	5
+SL345906	left palm	skin	residence 2	4	morning	7
+SL345907	right palm	skin	residence 2	5	morning	9
+SL345908	park/campus handrail	public surface	residence 2	6	morning	11
+SL345909	right palm	skin	residence 2	7	morning	13
+SL345910	subway exit handrail	public surface	residence 2	8	morning	15
+SL345911	left palm	skin	residence 2	1	morning	1
+SL345913	park/campus handrail	public surface	residence 2	3	morning	5
+SL345914	door knob	household surface	residence 2	4	morning	7
+SL345915	left palm	skin	residence 2	5	morning	9
+SL345916	right palm	skin	residence 2	6	morning	11
+SL345917	park/campus handrail	public surface	residence 2	7	morning	13
+SL345918	door knob	household surface	residence 2	8	morning	15
+SL345919	right palm	skin	residence 2	1	morning	1
+SL345920	bed headboard	household surface	residence 2	2	morning	3
+SL345921	right palm	skin	residence 2	3	morning	5
+SL345922	park/campus handrail	public surface	residence 2	4	morning	7
+SL345923	park/campus handrail	public surface	residence 2	5	morning	9
+SL345924	bed headboard	household surface	residence 2	6	morning	11
+SL345925	bed headboard	household surface	residence 2	7	morning	13
+SL345926	bed headboard	household surface	residence 2	8	morning	15
+SL345927	door knob	household surface	residence 2	1	morning	1
+SL345928	park/campus handrail	public surface	residence 2	2	morning	3
+SL345929	left palm	skin	residence 2	3	morning	5
+SL345930	subway exit handrail	public surface	residence 2	4	morning	7
+SL345931	door knob	household surface	residence 2	5	morning	9
+SL345932	door knob	household surface	residence 2	6	morning	11
+SL345933	left palm	skin	residence 2	7	morning	13
+SL345934	left palm	skin	residence 2	8	morning	15
+SL345935	subway exit handrail	public surface	residence 2	1	morning	1
+SL345936	left palm	skin	residence 2	2	morning	3
+SL345937	bed headboard	household surface	residence 2	3	morning	5
+SL345938	bed headboard	household surface	residence 2	4	morning	7
+SL345939	bed headboard	household surface	residence 2	5	morning	9
+SL345940	left palm	skin	residence 2	6	morning	11
+SL345941	door knob	household surface	residence 2	7	morning	13
+SL345942	park/campus handrail	public surface	residence 2	8	morning	15
+SL345943	bed headboard	household surface	residence 2	1	morning	1
+SL345944	subway exit handrail	public surface	residence 2	2	morning	3
+SL345945	door knob	household surface	residence 2	3	morning	5
+SL345946	right palm	skin	residence 2	4	morning	7
+SL345947	subway exit handrail	public surface	residence 2	5	morning	9
+SL345948	subway exit handrail	public surface	residence 2	6	morning	11
+SL345949	subway exit handrail	public surface	residence 2	7	morning	13
+SL345950	right palm	skin	residence 2	8	morning	15
+SL345951	park/campus handrail	public surface	residence 2	1	evening	2
+SL345953	subway exit handrail	public surface	residence 2	3	evening	6
+SL345954	left palm	skin	residence 2	4	evening	8
+SL345955	right palm	skin	residence 2	5	evening	10
+SL345956	bed headboard	household surface	residence 2	6	evening	12
+SL345957	left palm	skin	residence 2	7	evening	14
+SL345958	left palm	skin	residence 2	8	evening	16
+SL345959	right palm	skin	residence 2	1	evening	2
+SL345960	bed headboard	household surface	residence 2	2	evening	4
+SL345961	subway exit handrail	public surface	residence 2	4	evening	8
+SL345962	left palm	skin	residence 2	3	evening	6
+SL345963	park/campus handrail	public surface	residence 2	5	evening	10
+SL345964	right palm	skin	residence 2	6	evening	12
+SL345965	subway exit handrail	public surface	residence 2	7	evening	14
+SL345966	park/campus handrail	public surface	residence 2	8	evening	16
+SL345967	door knob	household surface	residence 2	1	evening	2
+SL345968	subway exit handrail	public surface	residence 2	2	evening	4
+SL345969	door knob	household surface	residence 2	3	evening	6
+SL345970	right palm	skin	residence 2	4	evening	8
+SL345971	left palm	skin	residence 2	5	evening	10
+SL345972	subway exit handrail	public surface	residence 2	6	evening	12
+SL345973	bed headboard	household surface	residence 2	7	evening	14
+SL345974	subway exit handrail	public surface	residence 2	8	evening	16
+SL345975	left palm	skin	residence 2	1	evening	2
+SL345976	left palm	skin	residence 2	2	evening	4
+SL345977	right palm	skin	residence 2	3	evening	6
+SL345978	bed headboard	household surface	residence 2	4	evening	8
+SL345979	subway exit handrail	public surface	residence 2	5	evening	10
+SL345980	park/campus handrail	public surface	residence 2	6	evening	12
+SL345981	right palm	skin	residence 2	7	evening	14
+SL345982	right palm	skin	residence 2	8	evening	16
+SL345983	bed headboard	household surface	residence 2	1	evening	2
+SL345984	right palm	skin	residence 2	2	evening	4
+SL345985	bed headboard	household surface	residence 2	3	evening	6
+SL345986	door knob	household surface	residence 2	4	evening	8
+SL345987	bed headboard	household surface	residence 2	5	evening	10
+SL345988	door knob	household surface	residence 2	6	evening	12
+SL345989	door knob	household surface	residence 2	7	evening	14
+SL345990	bed headboard	household surface	residence 2	8	evening	16
+SL345991	subway exit handrail	public surface	residence 2	1	evening	2
+SL345992	park/campus handrail	public surface	residence 2	2	evening	4
+SL345993	park/campus handrail	public surface	residence 2	3	evening	6
+SL345994	park/campus handrail	public surface	residence 2	4	evening	8
+SL345995	door knob	household surface	residence 2	5	evening	10
+SL345996	left palm	skin	residence 2	6	evening	12
+SL345997	park/campus handrail	public surface	residence 2	7	evening	14
+SL345998	door knob	household surface	residence 2	8	evening	16
+SL346079	bed headboard	household surface	residence 2	9	morning	17
+SL346080	door knob	household surface	residence 4	8	morning	15
+SL346081	bed headboard	household surface	residence 4	8	morning	15
+SL346082	door knob	household surface	residence 4	4	evening	8
+SL346083	door knob	household surface	residence 4	4	morning	7
+SL346084	subway exit handrail	public surface	residence 4	2	morning	3
+SL346085	bed headboard	household surface	residence 4	2	evening	4
+SL346086	bed headboard	household surface	residence 4	1	evening	2
+SL346087	left palm	skin	residence 2	9	morning	17
+SL346088	left palm	skin	residence 4	6	evening	12
+SL346089	left palm	skin	residence 4	7	evening	14
+SL346090	left palm	skin	residence 4	5	evening	10
+SL346091	subway exit handrail	public surface	residence 4	2	evening	4
+SL346092	door knob	household surface	residence 4	6	morning	11
+SL346093	park/campus handrail	public surface	residence 4	6	morning	11
+SL346094	left palm	skin	residence 4	7	morning	13
+SL346095	left palm	skin	residence 2	9	evening	18
+SL346096	park/campus handrail	public surface	residence 4	5	morning	9
+SL346097	bed headboard	household surface	residence 4	5	morning	9
+SL346099	bed headboard	household surface	residence 4	3	morning	5
+SL346100	left palm	skin	residence 4	4	evening	8
+SL346101	door knob	household surface	residence 4	3	evening	6
+SL346102	subway exit handrail	public surface	residence 4	7	morning	13
+SL346103	door knob	household surface	residence 2	9	morning	17
+SL346104	door knob	household surface	residence 4	6	evening	12
+SL346105	right palm	skin	residence 4	6	evening	12
+SL346106	bed headboard	household surface	residence 4	9	morning	17
+SL346108	left palm	skin	residence 4	6	morning	11
+SL346109	right palm	skin	residence 4	8	evening	16
+SL346110	bed headboard	household surface	residence 4	2	morning	3
+SL346111	door knob	household surface	residence 2	10	evening	20
+SL346112	subway exit handrail	public surface	residence 4	5	evening	10
+SL346113	left palm	skin	residence 4	1	evening	2
+SL346115	right palm	skin	residence 4	3	morning	5
+SL346116	park/campus handrail	public surface	residence 4	7	morning	13
+SL346117	subway exit handrail	public surface	residence 4	6	evening	12
+SL346118	right palm	skin	residence 4	9	morning	17
+SL346120	bed headboard	household surface	residence 4	5	evening	10
+SL346121	park/campus handrail	public surface	residence 4	9	morning	17
+SL346122	door knob	household surface	residence 4	5	evening	10
+SL346123	subway exit handrail	public surface	residence 4	7	evening	14
+SL346124	bed headboard	household surface	residence 4	6	morning	11
+SL346125	park/campus handrail	public surface	residence 4	2	evening	4
+SL346126	left palm	skin	residence 4	9	morning	17
+SL346128	left palm	skin	residence 4	5	morning	9
+SL346129	left palm	skin	residence 4	4	morning	7
+SL346130	park/campus handrail	public surface	residence 4	3	evening	6
+SL346131	park/campus handrail	public surface	residence 4	3	morning	5
+SL346132	subway exit handrail	public surface	residence 4	9	morning	17
+SL346133	park/campus handrail	public surface	residence 4	7	evening	14
+SL346134	park/campus handrail	public surface	residence 4	8	morning	15
+SL346136	park/campus handrail	public surface	residence 4	4	evening	8
+SL346137	right palm	skin	residence 4	4	morning	7
+SL346139	right palm	skin	residence 4	2	evening	4
+SL346140	park/campus handrail	public surface	residence 4	5	evening	10
+SL346141	subway exit handrail	public surface	residence 4	1	evening	2
+SL346144	right palm	skin	residence 4	3	evening	6
+SL346145	subway exit handrail	public surface	residence 4	4	morning	7
+SL346146	park/campus handrail	public surface	residence 4	6	evening	12
+SL346147	left palm	skin	residence 4	2	morning	3
+SL346148	subway exit handrail	public surface	residence 4	3	morning	5
+SL346149	right palm	skin	residence 4	7	morning	13
+SL346150	right palm	skin	residence 4	5	morning	9
+SL346151	left palm	skin	residence 4	8	evening	16
+SL346152	park/campus handrail	public surface	residence 4	4	morning	7
+SL346154	door knob	household surface	residence 4	3	morning	5
+SL346155	door knob	household surface	residence 4	7	evening	14
+SL346156	bed headboard	household surface	residence 4	7	evening	14
+SL346157	bed headboard	household surface	residence 4	7	morning	13
+SL346158	subway exit handrail	public surface	residence 4	4	evening	8
+SL346159	subway exit handrail	public surface	residence 4	5	morning	9
+SL346160	left palm	skin	residence 4	3	evening	6
+SL346161	subway exit handrail	public surface	residence 4	3	evening	6
+SL346162	door knob	household surface	residence 4	9	morning	17
+SL346163	right palm	skin	residence 4	8	morning	15
+SL346164	door knob	household surface	residence 4	8	evening	16
+SL346165	park/campus handrail	public surface	residence 4	1	evening	2
+SL346167	right palm	skin	residence 4	4	evening	8
+SL346168	bed headboard	household surface	residence 4	8	evening	16
+SL346169	left palm	skin	residence 4	8	morning	15
+SL346170	park/campus handrail	public surface	residence 4	8	evening	16
+SL346171	left palm	skin	residence 4	1	morning	1
+SL346172	right palm	skin	residence 4	2	morning	3
+SL346173	right palm	skin	residence 4	6	morning	11

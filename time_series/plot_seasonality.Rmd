@@ -1,0 +1,67 @@
+---
+title: Plot seasonality
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(wilkoxmisc)
+library(ggtext)
+library(glue)
+```
+
+This is an attempt to produce a plot or some plots for the manuscript that
+visually illustrate diurnal variation. 
+
+I'll start by loading the species abundance and seasonality data.
+
+```{r}
+abundances <- read_tsv("../abundances/species_abundances_decontaminated.tsv")
+seasonality <- read_tsv("./seasonality_strengths.tsv")
+```
+
+I'll select the species with the strongest significant seasonality for each
+combination of location and site.
+
+```{r}
+top_seasonal_species <- abundances %>%
+  left_join(seasonality) %>%
+  filter(p < 0.05) %>%
+  group_by(location, site) %>%
+  filter(seasonality_strength == max(seasonality_strength)) %>%
+  ungroup()
+
+annots <- top_seasonal_species %>%
+  group_by(site, location, species) %>%
+  mutate(lab_y = max(abundance) * 0.9) %>%
+  ungroup() %>%
+  distinct(location, site, species, seasonality_strength, p, lab_y) %>%
+  mutate_at("species", binom) %>%
+  mutate_at(c("site", "location"), str_to_sentence) %>%
+  mutate(annot = glue("{species} {signif(seasonality_strength, 2)}"))
+
+top_seasonal_species %>%
+  mutate_at(c("site", "location", "time"), str_to_sentence) %>%
+  ggplot(aes(x = timepoint, y = abundance, fill = time)) +
+    geom_col() +
+    geom_richtext(data = annots, inherit.aes = FALSE, aes(label = annot, y = lab_y), 
+                  x = 0, hjust = 0, fill = NA, label.color = NA, size = 2,
+                  label.padding = grid::unit(rep(0, 4), "pt")) +
+    facet_wrap(location ~ site, scales = "free_y") +
+    labs(x = "Time point",
+         y = "Relative abundance (%)",
+         fill = "Time of day")
+
+ggsave("top_seasonal_species.png", width = 10, height = 6)
+```

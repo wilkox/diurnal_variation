@@ -1,0 +1,43 @@
+---
+title: Prepare control sample abundances
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+```
+
+The aim of this script is to extract the species abundances in the control
+samples and prepare a tidy table.
+
+```{r}
+control_metadata <- read_tsv("../metadata/negative_control_metadata.tsv")
+
+control_abundances <- read_tsv("./merged_abundance_table_species_residence_surface_w_negcon.txt") %>%
+  pivot_longer(-ID, names_to = "sample", values_to = "abundance") %>%
+  filter(sample %in% control_metadata$sample) %>%
+  select(sample, species = ID, abundance)
+```
+
+I'll confirm that all the control samples appear in the new table.
+
+```{r}
+control_metadata$sample %in% control_abundances$sample
+```
+
+Excellent. I'll write the abundances table to file.
+
+```{r}
+write_tsv(control_abundances, "control_species_abundances.tsv")
+```

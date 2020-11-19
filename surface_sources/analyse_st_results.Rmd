@@ -1,0 +1,84 @@
+---
+title: Analyse results of SourceTracker predictions for surface sources
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(fs)
+```
+
+The aim of this analysis is to examine the results of the SourceTracker
+predictions for surfaces. This is part of my broader goal of confirming human
+skin as the major source for both household and public surface microbiota, as
+well as checking that the negative controls were not a major source.
+
+# Load and tidy SourceTracker source predictions
+
+```{r}
+metadata <- read_tsv("../metadata/metadata.tsv") %>%
+  rename_all(~ str_c("sink_", .))
+
+source_predictions <- tibble(sp_dir = dir_ls("source_predictions")) %>%
+  mutate(run = path_file(sp_dir)) %>%
+  mutate_at("run", str_replace, "-", " ") %>%
+  separate(run, c("source_location", "run_timepoint"), "_") %>%
+  mutate(sp_path = path(sp_dir, "sink_predictions", ext = "txt")) %>%
+  mutate(sp = map(sp_path, read_tsv)) %>%
+  select(source_location, sp) %>%
+  unnest(sp) %>%
+  rename(sink_sample = SampleID) %>%
+  gather("source", "proportion", -source_location, -sink_sample) %>%
+  left_join(metadata)
+```
+
+I'll write the source predictions to file for use later.
+
+```{r}
+write_tsv(source_predictions, "surface_source_predictions.tsv")
+```
+
+# Visualise sources for each surface site
+
+I'll plot out the source proportions across each site for all surface samples.
+
+```{r}
+source_predictions %>%
+  mutate_at(c("source", "sink_site"), str_to_sentence) %>%
+  mutate_at("source", fct_relevel, "Control", "Unknown", "Skin") %>%
+  ggplot(aes(x = source, y = proportion)) +
+    geom_boxplot() +
+    facet_wrap(~ sink_site, nrow = 1) +
+    labs(title = "SourceTracker predicted sources for all surface sites",
+         x = "Source",
+         y = "Predicted contribution") +
+    coord_flip()
+```
+
+This confirms that human skin is the major identifiable source for all
+household and public surface sites.
+
+# Quantification of skin vs non-skin contribution to surface types
+
+I'll calculate the mean and SD of the predicted source proportions for each
+type so I can report them in the manuscript.
+
+```{r}
+source_predictions %>%
+  select(sink_sample, sink_type, source, proportion) %>%
+  complete(nesting(sink_sample, sink_type), source, fill = list(proportion = 0)) %>%
+  group_by(sink_type, source) %>%
+  summarise(mean_proportion = mean(proportion), sd_proportion = sd(proportion)) %>%
+  ungroup()
+```

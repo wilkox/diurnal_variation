@@ -1,0 +1,225 @@
+---
+title: Effect of diurnal variation on matching accuracy
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(broom)
+library(glue)
+library(ggfittext)
+```
+
+The purpose of this analysis is to test whether the diurnal variation in
+species abundances on skin has any effect on matching accuracy. In other words,
+for the purposes of microbiota matching, does it matter whether the reference
+sample was taken in the morning or the evening?
+
+## Matching accuracy
+
+I'll begin by loading the matching results using the Watanabe method.
+
+```{r}
+matches <- read_tsv("../watanabe_matching/watanabe_matches.tsv")
+```
+
+I'll now break down the accuracy rates for morning and evening reference pools.
+Since this figure will appear in the manuscript, I'll prepare it at publication
+quality.
+
+```{r}
+matches %>%
+  group_by(reference_time, query_type, query_time) %>%
+  summarise(accuracy = 100 * (sum(is_accurate) / n())) %>%
+  ungroup() %>%
+  mutate(accuracy = signif(accuracy, 2)) %>%
+  mutate_at(c("query_type", "reference_time", "query_time"), 
+            str_to_sentence) %>%
+  mutate(query_type = fct_relabel(query_type, ~ str_wrap(.x, width = 8))) %>%
+  mutate_at(c("reference_time"), ~ glue("{.} reference")) %>%
+  mutate_at(c("query_time"), ~ glue("{.} query")) %>%
+  mutate_at(c("query_time", "reference_time"), ~ str_wrap(.x, width = 8)) %>%
+  mutate_at(c("query_time", "reference_time"), fct_rev) %>%
+  ggplot(aes(x = query_type, y = accuracy, label = glue("{accuracy}%"))) +
+    geom_col(position = "dodge") +
+    facet_grid(reference_time ~ query_time) +
+    geom_bar_text(position = "dodge", min.size = 0) +
+    labs(
+      x = "Query type",
+      y = "Accuracy (%)"
+    ) +
+    theme_classic()
+
+ggsave("matching_diurnality.png", width = 3.5, height = 3, dpi = 300)
+```
+
+### Summary of results
+
+- Among the household surface sites, evening queries outperform morning queries.
+- Among the public surface sites, morning queries outperform evening queries.
+- Among the household surface sites, morning references outperform evening
+  references.
+- Among the public surface sites, evening references outperform morning
+  references.
+
+### Statistical tests of these results
+
+I'll perform chi-square tests to confirm the above results, and quantify the
+effect sizes.
+
+Null hypothesis: among household surface query sites, query time and matching
+accuracy are independent.
+
+```{r}
+matches %>%
+  filter(query_type == "household surface") %>%
+  count(query_time, is_accurate) %>%
+  spread(is_accurate, n) %>%
+  as.data.frame() %>%
+  column_to_rownames("query_time") %>%
+  as.matrix() %>%
+  chisq.test() %>%
+  tidy()
+```
+
+Conclusion: the null hypothesis is rejected at p < 0.05.
+
+I'll now quantify the effect:
+
+```{r}
+matches %>%
+  filter(query_type == "household surface") %>%
+  count(query_time, is_accurate) %>%
+  spread(is_accurate, n) %>%
+  mutate(accuracy = 100 * `TRUE` / (`TRUE` + `FALSE`))
+```
+
+**Statement: among household surface sites, evening queries have significantly higher
+accuracy than morning queries.**
+
+---
+
+Null hypothesis: among public surface query sites, query time and matching
+accuracy are independent.
+
+```{r}
+matches %>%
+  filter(query_type == "public surface") %>%
+  count(query_time, is_accurate) %>%
+  spread(is_accurate, n) %>%
+  as.data.frame() %>%
+  column_to_rownames("query_time") %>%
+  as.matrix() %>%
+  chisq.test() %>%
+  tidy()
+```
+
+Conclusion: the null hypothesis is rejected at p < 0.05.
+
+I'll now quantify the effect:
+
+```{r}
+matches %>%
+  filter(query_type == "public surface") %>%
+  count(query_time, is_accurate) %>%
+  spread(is_accurate, n) %>%
+  mutate(accuracy = 100 * `TRUE` / (`TRUE` + `FALSE`))
+```
+
+**Statement: among public surface query sites, morning queries have significantly
+higher accuracy than evening queries.**
+
+---
+
+Null hypothesis: among household surface query sites, reference time and matching
+accuracy are independent.
+
+```{r}
+matches %>%
+  filter(query_type == "household surface") %>%
+  count(reference_time, is_accurate) %>%
+  spread(is_accurate, n) %>%
+  as.data.frame() %>%
+  column_to_rownames("reference_time") %>%
+  as.matrix() %>%
+  chisq.test() %>%
+  tidy()
+```
+
+Conclusion: the null hypothesis is rejected at p < 0.05.
+
+I'll now quantify the effect:
+
+```{r}
+matches %>%
+  filter(query_type == "household surface") %>%
+  count(reference_time, is_accurate) %>%
+  spread(is_accurate, n) %>%
+  mutate(accuracy = 100 * `TRUE` / (`TRUE` + `FALSE`))
+```
+
+**Statement: among household surface query sites, morning references are significantly
+more accurate than evening references.**
+
+---
+
+Null hypothesis: among public surface query sites, reference time and matching
+accuracy are independent.
+
+```{r}
+matches %>%
+  filter(query_type == "public surface") %>%
+  count(reference_time, is_accurate) %>%
+  spread(is_accurate, n) %>%
+  as.data.frame() %>%
+  column_to_rownames("reference_time") %>%
+  as.matrix() %>%
+  chisq.test() %>%
+  tidy()
+```
+
+Conclusion: the null hypothesis is not rejected at p < 0.05.
+
+**Statement: among public surface query sites, there is no significant difference in accuracy between morning and evening references.**
+
+### Hypothesis arising from these results
+
+In the morning, people have just finished a long period of interaction with
+their household microbiome: arriving home from work, evening activities,
+sleeping, and morning activities. Conversely, in the evening people have just
+finished a long period of interaction with their local public microbiomes: out
+and about on the subway, interacting with other people and with surfaces
+bearing common (pooled) microbiomes. 
+
+So, their morning microbiome more closely resembles their household microbiome,
+while their evening microbiome more closely resembles their public
+environmental microbiome.
+
+Let's see how well this fits with the results above:
+
+- Evening queries outperform morning queries for household surface sites
+  - ✗ Why should an evening query, taken after a long period where the occupant
+    has been absent, outperform a morning query, taken after a long period
+    where the occupant has been present and presumably dispersing to household
+    surfaces?
+- Morning references outperform evening references for household surface sites
+  - ✓ This fits with the idea that the public microbiome is 'erased' in favour
+    of the household/personal one overnight
+
+- Morning queries outperform evening queries for public surface sites
+  - ✗ If the assumption is that public surfaces are relatively stable over
+    time, why should there be a time-of-day effect for query samples? Also, the
+    sampling delay effect tests show that it's precisely public surfaces that
+    are *not* stable over time, while household surfaces are.
+- There is no effect of reference time of day for public surface sites
+  - ✓ This fits with the idea that the public microbiome disperses onto skin
+    during interactions during the day time
+
+Overall it looks like my model is missing something.

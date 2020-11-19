@@ -1,0 +1,175 @@
+---
+title: Microbial matching using the Watanabe method
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(fig.width = 12, fig.height = 8, echo = TRUE,
+               warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(vegan)
+library(broom)
+library(gglmannotate)
+```
+
+The aim of this analysis is to test the microbiota matching method introduced
+by Watanabe et al. [^watanabe], using mean Canberra distances between samples
+to identify the most likely match. Ultimately I would like to present and
+compare in the manuscript the accuracy of three matching methods
+– SourceTracker matching, Bray-Curtis based matching, and Canberra based
+(Watanabe) matching – and see how the accuracy varies with sampling delay.
+
+Watanabe matching requires Canberra distances between all samples, so I'll
+begin by calculating these for all samples pairwise. I'll also save them to
+file for potential later use.
+
+# Computing Canberra distances between all samples
+
+The vegan community matrix wants species as columns and samples as rows.
+
+```{r}
+comm <- read_tsv("../abundances/species_abundances_decontaminated.tsv") %>%
+  select(sample, species, abundance) %>%
+  spread(species, abundance, fill = 0) %>%
+  as.data.frame() %>%
+  column_to_rownames("sample") %>%
+  as.matrix() 
+
+distances <- vegdist(comm, method = "canberra", upper = TRUE) 
+
+canberra <- distances %>%
+  tidy() %>%
+  rename(query_sample = item1, reference_sample = item2) %>%
+  mutate_at(c("query_sample", "reference_sample"), as.character)
+
+write_tsv(canberra, "canberra_distances.tsv")
+```
+
+# Performing matching with the Watanabe method
+
+Watanabe et al. used the mean of the Canberra distances between a query sample
+and a pool of reference samples (i.e. the set of skin samples for an
+individual) to perform matching. The reference individual with the lowest mean
+distance was defined as the match. 
+
+For the purposes of this study, I will create a pool of reference individuals
+for each time point and reference site (left or right palm), then compare each
+query sample against that pool. The reference sample with the smallest mean
+Canberra distance compared to the query sample will be considered the match.
+
+I'll begin by setting up the reference pools. Pools with fewer than four
+samples (i.e. for which there was not a sample for each of the four individuals
+at that site for that time point) will not be used.
+
+```{r}
+metadata <- read_tsv("../metadata/metadata.tsv")
+
+references <- metadata %>%
+  filter(type == "skin") %>%
+  select(-type) %>%
+  add_count(site, timepoint, name = "pool_size") %>%
+  filter(pool_size == 4) %>%
+  select(-pool_size) %>%
+  rename_all(~ str_c("reference_", .))
+```
+
+For each query sample (i.e. surface sample), I'll find the Canberra distance
+between the query sample and each sample in each reference pool. For each
+matching attempt (i.e. combination of query and reference pool), I'll then
+assign the match as the reference sample with the smallest Canberra distance
+from the query. The match is considered accurate if the match location is the
+same as the query location.
+
+```{r}
+matches <- canberra %>%
+  left_join(metadata %>% rename_all(~ str_c("query_", .))) %>%
+  filter(query_type %in% c("household surface", "public surface")) %>%
+  right_join(references) %>%
+  group_by(query_sample, reference_site, reference_timepoint) %>%
+  mutate(is_winner = distance == min(distance)) %>%
+  ungroup() %>%
+  filter(is_winner) %>%
+  select(-is_winner) %>%
+  mutate(is_accurate = query_location == reference_location)
+```
+
+I'll write these results to file for later use.
+
+```{r}
+write_tsv(matches, "watanabe_matches.tsv")
+```
+
+# Accuracy of Watanabe matching
+
+I want to know a few things about the results of Watanabe matching:
+
+- What is the overall accuracy rate?
+- What are the accuracy rates broken down by site?
+- Is there any effect of sampling delay (the amount of time the query sample
+  was taken after the reference sample) on matching accuracy?
+
+## Accuracy rates
+
+I'll start with the overall accuracy rate:
+
+```{r}
+matches %>%
+  summarise(accuracy = sum(is_accurate) / n())
+```
+
+Better overall accuracy than the SourceTracker method.
+
+Next I'll look at the accuracy rate broken down by query type:
+
+```{r}
+matches %>%
+  group_by(query_type) %>%
+  summarise(accuracy = sum(is_accurate) / n())
+```
+
+And by site:
+
+```{r}
+matches %>%
+  group_by(query_site) %>%
+  summarise(accuracy = sum(is_accurate) / n())
+```
+
+Again, this method is more accurate than SourceTracker across all sites.
+
+## Effect of sampling delay on matching accuracy
+
+I'll visualise the matching accuracy for each site and for different sampling
+delays.
+
+```{r}
+matches %>%
+  mutate(delay = query_timepoint - reference_timepoint) %>%
+  group_by(query_site, delay) %>%
+  summarise(accuracy = sum(is_accurate) / n()) %>%
+  ungroup() %>%
+  mutate_at("query_site", str_to_sentence) %>%
+  ggplot(aes(x = delay, y = accuracy)) +
+    geom_line() +
+    geom_smooth(method = "loess") +
+    facet_wrap(~ query_site, ncol = 1) +
+    labs(title = "Watanabe matching accuracy by sampling delay",
+         subtitle = "Broken down by query site",
+         caption = "Sampling delay is query time point minus reference time point",
+         x = "Sampling delay",
+         y = "Matching accuracy")
+```
+
+If there is an effect here, it is very small and inconsistent across sites.
+
+[^watanabe]: Watanabe H, Nakamura I, Mizutani S, et al. Minor taxa in human skin microbiome contribute to the personal identification. Takemoto K, ed. PLoS ONE. 2018;13(7):e0199947. doi:10.1371/journal.pone.0199947.

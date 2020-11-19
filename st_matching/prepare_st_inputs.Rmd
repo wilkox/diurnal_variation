@@ -1,0 +1,96 @@
+---
+title: Prepare inputs for SourceTracker-based microbiota matching
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r}
+library(tidyverse)
+library(fs)
+```
+
+For SourceTracker-based microbiota matching, I want to generate predictions for
+every surface sample with every skin sample as a potential source. Each run
+will include all surface samples as sinks, and all skin samples from a given
+time point as potential sources.
+
+# Generating map files
+
+As with the other matching methods, I'm only going to run potential matches
+where there are a full set of four individuals in the reference pool. This
+means time points that lack at least one skin sample from each individual will
+not be run.
+
+```{r}
+if (! dir_exists("maps")) {
+  dir_create("maps")
+} else {
+  dir_delete("maps")
+  dir_create("maps")
+}
+
+metadata <- read_tsv("../metadata/metadata.tsv")
+
+sinks <- metadata %>%
+  filter(! type == "skin") %>%
+  select("#SampleID" = sample, Env = type) %>%
+  mutate(SourceSink = "sink")
+
+runs <- metadata %>%
+  filter(type == "skin") %>%
+  group_by(timepoint) %>%
+  mutate(pool_size = n_distinct(location)) %>%
+  ungroup() %>%
+  filter(pool_size == 4) %>%
+  select(timepoint, "#SampleID" = sample, Env = location) %>%
+  mutate(SourceSink = "source") %>%
+  nest(map = c("#SampleID", Env, SourceSink)) %>%
+  mutate(map = map(map, bind_rows, sinks)) %>%
+  mutate(map_path = path("maps", timepoint, ext = "tsv"))
+
+walk2(runs$map, runs$map_path, write_tsv)
+```
+
+# Generating OTU tables
+
+Produce the OTU tables. Anything with an abundance smaller than 0.1% will be
+discarded.
+
+SourceTracker wants the OTU tables in a very specific format: the first line of
+the file must be "#OTU TABLE"; the first column must be named "#OTU ID"; it
+wants species in rows, samples in columns; and abundances must be given as
+whole-number counts (I'll multiply the relative abundances by 1000 to achieve
+this).
+
+```{r}
+if (! dir_exists("OTU_tables")) {
+  dir_create("OTU_tables")
+} else {
+  dir_delete("OTU_tables")
+  dir_create("OTU_tables")
+}
+
+abundances <- read_tsv("../abundances/species_abundances_decontaminated.tsv") %>%
+  mutate(abundance = ceiling(1000 * abundance)) %>%
+  filter(abundance > 0)
+
+OTU_tables <- runs %>%
+  mutate(samples = map(map, pull, "#SampleID")) %>%
+  select(timepoint, samples) %>%
+  mutate(OTU_table = list(abundances)) %>%
+  mutate(OTU_table = map2(OTU_table, samples, ~ filter(.x, sample %in% .y))) %>%
+  mutate(OTU_table = map(OTU_table, ~ .x %>% 
+                         select(sample, species, abundance) %>%
+                         spread(sample, abundance, fill = 0) %>%
+                         rename("#OTU ID" = species)
+                         )) %>%
+  mutate(OTU_table_path = path("OTU_tables", timepoint, ext = "tsv"))
+
+walk(OTU_tables$OTU_table_path, ~ write_tsv(tibble("#OTU TABLE" = character()), .x))
+walk2(OTU_tables$OTU_table, OTU_tables$OTU_table_path, write_tsv, append =
+      TRUE, col_names = TRUE)
+```

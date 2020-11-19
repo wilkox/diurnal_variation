@@ -1,0 +1,328 @@
+---
+title: Evaluation of contaminant removal
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(wilkoxmisc)
+library(ggtext)
+library(broom)
+library(vegan)
+library(gganimate)
+```
+
+The purpose of this analysis is to evaluate the effects of contaminant removal.
+Initially I thought I would not need to do this, as Xinzhao ran some read-level
+decontamination that seemed to remove most of the major contaminants. However,
+after some strange results further down the pipeline, I've decided to revisit
+the issue of decontamination.
+
+# `decontam`-identified contaminants in the species abundance table
+
+I'll begin by loading the species abundances and the list of potential
+contaminants identified by `decontam`.
+
+```{r}
+stable <- read_tsv("../abundances/species_abundances_not_decontaminated.tsv")
+
+contaminants <- read_csv("contamdf_residence_surface.prev.csv") %>%
+  filter(contaminant) %>%
+  pull(X1)
+
+contaminants
+```
+
+`decontam` identified 34 potential contaminants. Many of these are the usual
+suspects, such as `Bradyrhyzobium` sp. BTAi1, but there are a few concerning
+species in there as well that are well-known human gut or skin commensals. I
+would be hesitant to remove these.
+
+I'll start by examining how abundant they are across all samples. I would
+expect these abundances to be lower than in the original dataset given the
+read-level decontamination.
+
+```{r}
+stable %>%
+  filter(species %in% contaminants) %>%
+  filter(abundance > 0) %>%
+  select(species, abundance) %>%
+  mutate_at("species", binom) %>%
+  mutate(species = fct_reorder(species, abundance)) %>%
+  ggplot(aes(x = species, y = abundance)) +
+    geom_boxplot() +
+    coord_flip() +
+    theme(axis.text.y = element_markdown(), plot.title = element_markdown()) +
+    labs(title = "*decontam*-identified contaminants in all samples",
+         x = "Species",
+         y = "Relative abundance (%)")
+```
+
+A few observations on this:
+
+- Several of the `decontam`-identified contaminants that I was suspicious of as
+  they are common human commensals – *Staphylococcus epidermidis*, *Salmonella
+  enterica*, *Enterococcus faecium* for instance – have already been completely
+  removed from the dataset by the read-level decontamination
+- Likewise, *Bradyrhyzobium sp. BTAi1*, the major culprit from the previous
+  run, has been completely removed
+- The median top contaminant by abundance, *Methylobacterium radiotolerans*, is
+  from a genus that is a well-described contaminant of reagent kits[^salter].
+- *Halomonas*, which I've incidentally noted to be a likely contaminant based
+  on the way it shows up in downstream analyses, is not on the list.
+
+Overall, I'm not particularly reassured by these results. It seems that many
+likely true human commensals have been removed already, and if I proceed with
+removing the `decontam` list I'll remove a few more. On the other hand, the
+*Methylobacterium* species is almost certainly a true contaminant.
+
+Next I want to see how the abundances of these putative contaminants are
+distributed across samples of different types, locations, sites and time
+points. First, for the manuscript, I'll get overall contaminant abundances:
+
+```{r}
+stable %>%
+  filter(species %in% contaminants) %>%
+  summarise(mean(abundance), sd(abundance))
+```
+
+## Type
+
+```{r}
+stable %>%
+  filter(species %in% contaminants) %>%
+  group_by(type) %>%
+  summarise(mean(abundance), sd(abundance))
+```
+
+Skin has a substantially lower burden of these contaminants than surface
+samples. This is constant with these being true contaminants, as the biomass on
+the skin samples is probably substantially higher and would dilute out
+contaminants introduced from the materials and reagents.
+
+## Location
+
+I would hope the contaminant burden is roughly similar across locations.
+
+```{r}
+stable %>%
+  filter(species %in% contaminants) %>%
+  group_by(location) %>%
+  summarise(mean(abundance), sd(abundance))
+```
+
+It is.
+
+## Site
+
+As with the type analysis, I would generally expect skin sites (and frequently
+touched surface sites) to have the lowest contaminant burden.
+
+```{r}
+stable %>%
+  filter(species %in% contaminants) %>%
+  group_by(site) %>%
+  summarise(mean(abundance), sd(abundance))
+```
+
+This is generally borne out. The contaminant burden on park/campus handrail is
+especially high.
+
+## Time point
+
+I would hope that the contaminant burden is more or less independent of time
+point; any trend or discontinuity would likely indicated a substantial problem
+with sample collection and processing. This is easier to evaluate visually.
+
+```{r}
+stable %>%
+  filter(species %in% contaminants) %>%
+  filter(abundance > 0) %>%
+  mutate_at("timepoint", factor) %>%
+  ggplot(aes(x = timepoint, y = abundance)) +
+    geom_boxplot() +
+    labs(title = "Contaminant abundance by time point",
+         x = "Time point",
+         y = "Relative abundance (%)")
+```
+
+Thankfully, there doesn't appear to be any major timepoint effect.
+
+# Effect of removing contaminants on species abundance
+
+I'll begin by visualising the effect of contaminant removal on the remaining
+species relative abundance across all samples. (Of course, if I actually do
+this I'll re-standardise the relative abundances).
+
+```{r}
+stable %>%
+  filter(! species %in% contaminants) %>%
+  count(sample, site, location, timepoint, wt = abundance, name = "abundance") %>%
+  mutate_at(c("site", "location"), str_to_sentence) %>%
+  mutate_at(c("site", "location"), str_wrap, 12) %>%
+  ggplot(aes(x = timepoint, y = abundance)) +
+    geom_col() +
+    facet_grid(site ~ location) +
+    labs(title = "Non-contaminant abundance in all samples",
+         x = "Time point",
+         y = "Relative abundance (%)")
+```
+
+Basically what I expected: most samples are not too much affected, but some
+park/campus handrail samples would lose a substantial amount of abundance.
+
+I'll quantify the remaining abundance in the hardest-hit samples.
+
+```{r}
+stable %>%
+  filter(! species %in% contaminants) %>%
+  count(sample, site, location, timepoint, wt = abundance, name = "abundance") %>%
+  arrange(abundance) %>%
+  top_n(-10, abundance)
+```
+
+Not too bad at all; only two samples with less than 50% abundance remaining.
+Just to be complete, I'll visualise the distribution of non-contaminant
+abundances.
+
+```{r}
+stable %>%
+  filter(! species %in% contaminants) %>%
+  count(sample, site, location, timepoint, wt = abundance, name = "abundance") %>%
+  ggplot(aes(x = abundance)) +
+    geom_density() +
+    labs(title = "Distribution of non-contaminant abundances",
+         x = "Non-contaminant relative abundance (%)",
+         y = "Density")
+```
+
+I conclude from this that, at least from a numerical point of view, removing
+the contaminants would not have a significant effect on most samples.
+
+# Effect of removing contaminants on community profiles
+
+Next I want to check that removing the contaminants would not obscure the true
+biological patterns in the data. This is a little more subjective, and requires
+making some conservative assumptions about what patterns I expect to see.
+
+Given that we have time series data for each site/location, it seems reasonable
+to assume that we should see good clustering by location within each site. As a
+contaminant introduced by sample handling, equipment or reagents can affect all
+samples (modulo the biomass in the sample), it should be expected that
+contaminant removal increases this clustering effect. I'll test for this by
+visualising the ordination of Bray-Curtis distances between the samples for a
+given site, before and after contaminant removal.
+
+I'll start with left palm as a test case.
+
+```{r results = FALSE}
+ordinate_with_without_contaminants <- function(ssite) {
+
+  ordinate <- function(sstable) {
+    ordination <- sstable %>%
+      select(sample, species, abundance) %>%
+      arrange(sample) %>%
+      spread(species, abundance, fill = 0) %>%
+      column_to_rownames("sample") %>%
+      as.matrix %>%
+      vegdist() %>%
+      metaMDS(try = 100) %>%
+      .$points %>% 
+      as.data.frame %>% 
+      rownames_to_column("sample") %>% 
+      as_tibble()
+    return(ordination)
+  }
+
+  meta <- read_tsv("../metadata/metadata.tsv")
+
+  nMDS_with_contaminants <- stable %>%
+    filter(site == ssite) %>%
+    ordinate()
+
+  nMDS_without_contaminants <- stable %>%
+    filter(site == ssite) %>%
+    filter(! species %in% contaminants) %>%
+    ordinate()
+
+  ssite_clean <- ssite %>%
+    str_replace_all(" ", "_") %>%
+    str_replace_all("/", "-")
+
+  p <- bind_rows(list(`with contaminants` = nMDS_with_contaminants, 
+                                `without contaminants` = nMDS_without_contaminants), 
+                           .id = "state") %>%
+    left_join(meta) %>%
+    mutate_at("location", str_to_sentence) %>%
+    ggplot(aes(x = MDS1, y = MDS2, colour = location)) + 
+    geom_point() + 
+    transition_states(state, transition_length = 2, state_length = 1) +
+    enter_fade() + 
+    exit_shrink() +
+    ease_aes("sine-in-out") +
+    labs(title = "{str_to_sentence(ssite)} {if_else(transitioning, '', closest_state)}",
+         colour = "Location")
+  anim_save(str_c(ssite_clean, ".gif"), p)
+}
+ordinate_with_without_contaminants("left palm")
+```
+
+![](left_palm.gif)
+
+Fantastic – removing the contaminants doesn't do any damage to the clustering,
+and even seems to bring one stray Residence 4 sample back into the fold. I'll
+repeat the same visualisation for the other sites.
+
+```{r results = FALSE}
+ordinate_with_without_contaminants("right palm")
+ordinate_with_without_contaminants("bed headboard")
+ordinate_with_without_contaminants("door knob")
+ordinate_with_without_contaminants("park/campus handrail")
+ordinate_with_without_contaminants("subway exit handrail")
+```
+
+![](right_palm.gif)
+
+![](bed_headboard.gif)
+
+![](door_knob.gif)
+
+![](park-campus_handrail.gif)
+
+![](subway_exit_handrail.gif)
+
+Overall, it looks like contaminant removal wouldn't have a significant effect
+on biologically meaningful patterns, at least at the level of clustering by
+location. This might be a bad thing: it might suggest contamination isn't
+actually the cause of the strange downstream effects after all.
+
+# Decontaminated abundances
+
+For what it's worth though, I'm going to go ahead and generate a decontaminated
+species abundances table. I'll then re-run the SourceTracker matching and time
+series analyses to see if this makes any difference to the strange results I
+was seeing.
+
+```{r}
+stable %>%
+  filter(! species %in% contaminants) %>%
+  group_by(sample) %>%
+  mutate(abundance = 100 * abundance / sum(abundance)) %>%
+  ungroup() %>%
+  write_tsv("../abundances/species_abundances_decontaminated.tsv")
+```
+
+[^salter]: Salter SJ, Cox MJ, Turek EM, et al. Reagent and laboratory
+contamination can critically impact sequence-based microbiome analyses. BMC
+Biol. 2014;12(1):87–12. doi:10.1186/s12915-014-0087-z.

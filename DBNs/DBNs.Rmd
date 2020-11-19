@@ -1,0 +1,274 @@
+---
+title: Modelling dispersal between sites with Dynamic Bayesian Networks
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(fs)
+library(glue)
+library(wilkoxmisc)
+library(ggtext)
+library(tidygraph)
+library(ggraph)
+library(broom)
+```
+
+The aim of this work is to model the dispersal of microorganisms between public
+surface, indoor surface and skin sites using Dynamic Bayesian Networks. This
+may give some insight into dispersal patterns. Broadly, I am following the
+approach of Lax *et al.*[^lax], using BANJO to build the networks.
+
+# Preparing data and generating DBNs
+
+Following Lax *et al.*, I'm going to start with abundances aggregated at the
+family level and log2-transformed although I might refine this as I go.
+
+```{r}
+walk(c("BANJO_input", "BANJO_output", "BANJO_settings"), function(d) {
+  if (! dir_exists(d)) dir_create(d)
+})
+
+settings_template <- read_file("dynamic.settings.txt")
+
+write_settings_file <- function(run_name, location, family, nvars, nobs, settings_file, ...) {
+  settings <- glue(settings_template)
+  write_file(settings, settings_file)
+}
+
+write_input_file <- function(observations, input_file, ...) {
+  write_tsv(observations, input_file)
+}
+
+runs <- read_tsv("../abundances/species_abundances_decontaminated.tsv") %>%
+  count(sample, site, type, location, timepoint, family, 
+        wt = abundance, name = "abundance") %>%
+  mutate(abundance = log2(abundance)) %>%
+  mutate(abundance = if_else(is.infinite(abundance), 0, abundance)) %>%
+  mutate_at(c("site", "location"), str_replace_all, " ", "-") %>%
+  select(site, location, timepoint, family, abundance) %>%
+  arrange(timepoint) %>%
+  nest(observations = c(timepoint, site, abundance)) %>%
+  mutate(observations = map(observations, pivot_wider, names_from = "site", 
+                            values_from = "abundance", values_fill = list(abundance = 0))) %>%
+  mutate(observations = map(observations, select, -timepoint)) %>%
+  mutate(run_name = str_c(location, "_", family)) %>%
+  mutate(settings_file = path("BANJO_settings", run_name, ext = "txt")) %>%
+  mutate(input_file = path("BANJO_input", run_name, ext = "txt")) %>%
+  mutate(output_file = path("BANJO_output", run_name, ext = "txt")) %>%
+  mutate(nvars = map_dbl(observations, ncol)) %>%
+  mutate(nobs = map_dbl(observations, nrow)) %>%
+  pwalk(write_settings_file) %>%
+  pwalk(write_input_file) %>%
+  filter(! file_exists(output_file))
+
+walk(
+  runs$settings_file,
+  ~ system(str_c("java -jar banjo.jar settingsFile=", .x))
+)
+```
+
+# Load and parse output
+
+```{r}
+extract_graph <- function(output_file) {
+
+  output <- read_file(output_file)
+
+  # Extract the node labels
+  node_sites <- str_match_all(output, "(\\d+) \\[label=\"(.+)\"\\]") %>%
+    .[[1]] %>%
+    as_tibble(.name_repair = "minimal") %>%
+    set_names("original", "node", "site") %>%
+    select(-original) %>%
+    mutate(site = str_replace_all(site, "-", " ")) %>%
+    distinct()
+
+  # Extract the edges and translate to sites
+  graph <- output %>%
+    str_match_all("(\\d+)->(\\d+);") %>%
+    .[[1]] %>%
+    as_tibble(.name_repair = "minimal") %>%
+    set_names("original", "parent", "child") %>%
+    select(-original) %>%
+    left_join(node_sites %>% rename(parent = node, parent_site = site), by = "parent") %>%
+    left_join(node_sites %>% rename(child = node, child_site = site), by = "child") %>%
+    select(parent_site, child_site) %>%
+    distinct()
+  return(graph)
+}
+
+graphs <- tibble(output_file = dir_ls("BANJO_output")) %>%
+  mutate(location = str_extract(output_file, "residence-\\d")) %>%
+  mutate(family = str_match(output_file, "residence-\\d_(.+)\\.txt")[,2]) %>%
+  mutate_at(c("location", "family"), ~ str_replace_all(., "-", " ")) %>%
+  mutate(graph = map(output_file, extract_graph))
+```
+
+# Summary statistics on DBN generation
+
+Before unpacking the graphs themselves, I'm going to look a little closer at
+the success rates for generating graphs. What proportion of runs generated a
+graph?
+
+```{r}
+graphs %>%
+  mutate(success = map_dbl(graph, nrow) > 0) %>%
+  count(success) %>%
+  mutate(percentage = 100 * n / sum(n))
+```
+
+A little fewer than half; not too bad. I'll look at how these success rates
+distribute across locations and families.
+
+```{r}
+graphs %>%
+  mutate(success = map_dbl(graph, nrow) > 0) %>%
+  mutate_at("location", str_to_sentence) %>%
+  count(location, success) %>%
+  ggplot(aes(x = location, y = n, fill = success)) +
+    geom_col(position = "stack") +
+    labs(title = "DBN generation success by location",
+         subtitle = "For runs at the family level",
+         x = "Location",
+         y = "Graphs",
+         fill = "Success?")
+```
+
+Some variation, but promisingly every location succeeded in producing at least
+some graphs.
+
+```{r}
+graphs %>%
+  mutate(success = map_dbl(graph, nrow) > 0) %>%
+  mutate_at("family", binom) %>%
+  count(family, success) %>%
+  mutate_at("family", fct_rev) %>%
+  ggplot(aes(x = family, y = n, fill = success)) +
+    geom_col(position = "stack") +
+    labs(title = "DBN generation success by family",
+         subtitle = "For runs at the family level",
+         x = "Family",
+         y = "Graphs",
+         fill = "Success?") +
+    theme(axis.text.y = element_markdown()) +
+    coord_flip()
+```
+
+Not too bad. The majority of families produced at least some valid graphs.
+
+# Summary statistics on DBNs
+
+Next, I'll unpack the graphs to start looking at the graphs themselves.
+
+```{r}
+graphs <- graphs %>%
+  unnest(graph) %>%
+  select(-output_file)
+
+count(graphs, parent_site, child_site) %>%
+  arrange(desc(n))
+```
+
+I'll draw it as a directed graph.
+
+```{r}
+network <- graphs %>%
+  count(parent_site, child_site) %>%
+  as_tbl_graph()
+
+ggraph(network) + 
+    geom_edge_fan(aes(alpha = n, edge_width = n), arrow = grid::arrow()) + 
+    geom_node_point() +
+    geom_node_label(aes(label = name))
+```
+
+Grossly, this looks like surprisingly good support for dispersal from public
+surfaces to skin. I'll get some edge statistics by type:
+
+```{r}
+site_type <- "../metadata/metadata.tsv" %>% 
+  read_tsv() %>% 
+  distinct(site, type)
+
+graphs %>%
+  left_join(site_type %>% rename(parent_site = site, parent_type = type)) %>%
+  left_join(site_type %>% rename(child_site = site, child_type = type)) %>%
+  count(parent_type, child_type) %>%
+  arrange(desc(n))
+
+graphs %>%
+  left_join(site_type %>% rename(parent_site = site, parent_type = type)) %>%
+  left_join(site_type %>% rename(child_site = site, child_type = type)) %>%
+  count(parent_type) %>%
+  arrange(desc(n))
+
+graphs %>%
+  left_join(site_type %>% rename(parent_site = site, parent_type = type)) %>%
+  left_join(site_type %>% rename(child_site = site, child_type = type)) %>%
+  count(child_type)
+```
+
+Overall, this nicely confirms and extends the findings of Lax et al. Skin is
+more likely to be a parent than household surfaces, but public surfaces
+outnumber them both. Public surfaces are also much less likely to be children
+than either skin or household surfaces.
+
+# Statistical significance
+
+```{r}
+graphs %>%
+  left_join(site_type %>% rename(parent_site = site, parent_type = type)) %>%
+  left_join(site_type %>% rename(child_site = site, child_type = type)) %>%
+  count(location, parent_type, child_type) %>%
+  ggplot(aes(x = parent_type, y = n)) +
+    geom_boxplot() +
+    facet_wrap(~ child_type)
+```
+
+```{r}
+graphs %>%
+  left_join(site_type %>% rename(parent_site = site, parent_type = type)) %>%
+  left_join(site_type %>% rename(child_site = site, child_type = type)) %>%
+  count(location, parent_type, child_type) %>%
+  nest(data = c(parent_type, location, n)) %>%
+  mutate(test = map(data, ~ kruskal.test(n ~ parent_type, data = .x))) %>%
+  mutate(test = map(test, tidy)) %>%
+  unnest(test)
+```
+
+```{r}
+graphs %>%
+  left_join(site_type %>% rename(parent_site = site, parent_type = type)) %>%
+  left_join(site_type %>% rename(child_site = site, child_type = type)) %>%
+  count(location, parent_type, child_type) %>%
+  ggplot(aes(x = child_type, y = n)) +
+    geom_boxplot() +
+    facet_wrap(~ parent_type)
+```
+
+```{r}
+graphs %>%
+  left_join(site_type %>% rename(parent_site = site, parent_type = type)) %>%
+  left_join(site_type %>% rename(child_site = site, child_type = type)) %>%
+  count(location, parent_type, child_type) %>%
+  nest(data = c(child_type, location, n)) %>%
+  mutate(test = map(data, ~ kruskal.test(n ~ child_type, data = .x))) %>%
+  mutate(test = map(test, tidy)) %>%
+  unnest(test)
+```
+
+[^lax]: Lax S, Smith DP, Hampton-Marcell J, et al. Longitudinal analysis of
+microbial interaction between humans and the indoor environment. Science.
+2014;345(6200):1048-1052. doi:10.1126/science.1254529.

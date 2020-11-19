@@ -1,0 +1,131 @@
+###-------------------------------------------------
+### Input parameter settings file for 
+###
+###       BA         Bayesian 
+###         N        Network Inference
+###          J       with Java
+###           O      Objects
+###
+### Banjo is licensed from Duke University.
+### Copyright (c) 2005-07 by Alexander J. Hartemink.
+### All rights reserved.
+###
+### Settings file consistent with version 2.0.0
+###-------------------------------------------------
+
+
+###-------------------------------------------------
+### Project information
+###-------------------------------------------------
+project =                  temporal dynamics project
+dataset =  {nvars}-vars-{nobs}-temporal-observations
+user =                                        wilkox
+notes =                         {location}, {family}
+
+###-------------------------------------------------
+### Input and output locations
+###-------------------------------------------------
+
+inputDirectory =                         BANJO_input
+observationsFile =               {run_name}.txt
+
+outputDirectory =                       BANJO_output
+reportFile =                     {run_name}.txt
+
+
+###-------------------------------------------------
+### Required data
+###-------------------------------------------------
+
+variableCount =                              {nvars}
+observationCount =                              {nobs}
+
+
+###-------------------------------------------------
+### Optional data
+###-------------------------------------------------
+
+initialStructureFile =                   
+mustBePresentEdgesFile =
+mustNotBePresentEdgesFile =
+
+
+###-------------------------------------------------
+###  Pre-processing options
+###-------------------------------------------------
+
+discretizationPolicy =                            i5  
+discretizationExceptions =  
+createDiscretizationReport =             
+
+
+###-------------------------------------------------
+###  Search specifications
+###-------------------------------------------------
+
+searcherChoice =                              Greedy
+proposerChoice =                       AllLocalMoves
+evaluatorChoice =                            default
+deciderChoice =                              default
+statisticsChoice =                           default
+
+
+###-------------------------------------------------
+### Search "problem domain" constraints
+###-------------------------------------------------
+
+minMarkovLag =                                     1
+maxMarkovLag =                                     1
+dbnMandatoryIdentityLags =                         1
+equivalentSampleSize =                           1.0
+maxParentCount =                                   5
+
+###-------------------------------------------------
+### Search monitoring properties
+###-------------------------------------------------
+
+nBestNetworks =                                    1
+bestNetworksAre =                       nonidentical
+screenReportingInterval =                       20 s
+fileReportingInterval =                         10 m
+
+
+###-------------------------------------------------
+### Stopping criteria
+###-------------------------------------------------
+
+maxTime =                                       10 m
+maxProposedNetworks =                        
+maxRestarts =                                     
+minNetworksBeforeChecking =                     1000
+
+
+###-------------------------------------------------
+### Parameters used by specific methods
+###-------------------------------------------------
+
+### For simulated annealing:
+initialTemperature =                            1000
+coolingFactor =                                  0.8
+maxAcceptedNetworksBeforeCooling =              1000
+maxProposedNetworksBeforeCooling =             10000
+minAcceptedNetworksBeforeReannealing =           200
+reannealingTemperature =                         500
+
+### For greedy:
+minProposedNetworksAfterHighScore =             1000
+minProposedNetworksBeforeRestart =              3000
+maxProposedNetworksBeforeRestart =              5000
+restartWithRandomNetwork =                       yes
+maxParentCountForRestart =                         3
+
+
+###-------------------------------------------------
+### Misc. options
+###-------------------------------------------------
+displayMemoryInfo =                              yes 
+displayStructures =                              yes
+variableNames = inFile
+createDotOutput = yes
+fullPathToDotExecutable = /usr/local/bin/dot
+fileNameForTopGraph = {run_name}

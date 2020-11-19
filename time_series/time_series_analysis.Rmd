@@ -1,0 +1,1280 @@
+---
+title: Time series analysis of species abundances
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    toc_depth: 4
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(furrr); plan(multisession)
+library(ggtext)
+library(glue)
+library(ggVennDiagram)
+library(ggfittext)
+library(gglmannotate)
+library(broom)
+library(ggsignif)
+library(treemapify)
+library(wilkoxmisc)
+set.seed(1)
+```
+
+The genesis of this analysis was an incidental observation that some indicator
+species appeared to show a strong diurnal variation in abundance, on skin as
+well as on some surface sites.
+
+My basic approach to detecting diurnal species is to decompose the time series
+of each species at each site with a 1 day point period, then measure the
+variance of the seasonal component as a proportion of total variance.
+
+## First trial of time series decomposition
+
+To get the method working, I'm going to start with a species and site that I
+noted from the indicator species analysis appears to have a strong diurnal
+pattern: *Janibacter hoylei* in the residence 3 left palm site.
+
+```{r}
+abundances <- read_tsv("../abundances/species_abundances_decontaminated.tsv")
+
+abundances %>%
+  filter(site == "left palm") %>%
+  filter(location == "residence 3") %>%
+  filter(species == "Janibacter_hoylei") %>%
+  select(timepoint, species, abundance) %>%
+  ggplot(aes(x = timepoint, y = abundance)) +
+    geom_col() +
+    labs(title = "*Janibacter hoylei* in residence 3 left palm",
+         x = "Time point",
+         y = "Relative abundance (%)"
+         ) +
+    theme(plot.title = element_markdown())
+```
+
+I'll use R's `decompose()` function to decompose the time series into trend,
+seasonal and residual (random) components. For missing values, I'll use the
+`imputeTS` function `na_seadec()` which imputes missing values after first
+removing the seasonality component, to ensure I'm minimising any effect of
+missing values on seasonality.
+
+```{r}
+decompose_abundances <- function(x) {
+
+  # Return NA unless there are at least 4 time points
+  if (nrow(x) < 4) return(NA)
+
+  x %>%
+    select(timepoint, abundance) %>%
+    mutate_at("timepoint", ~ factor(., levels = min(.):max(.))) %>%
+    complete(timepoint, fill = list(abundance = NA)) %>%
+    arrange(timepoint) %>%
+    pull(abundance) %>%
+    ts(frequency = 2)  %>%
+    imputeTS::na_seadec() %>%
+    decompose("additive") %>%
+    .[1:4] %>%
+    map(as.double) %>%
+    as_tibble() %>%
+    mutate(timepoint = 1:n()) %>%
+    select(timepoint, observed = x, everything())
+}
+
+time_series <- abundances %>%
+  filter(site == "left palm") %>%
+  filter(location == "residence 3") %>%
+  filter(species == "Janibacter_hoylei") %>%
+  decompose_abundances()
+
+time_series %>%
+  gather("component", "abundance", observed, seasonal, trend, random) %>%
+  mutate_at("component", str_to_sentence) %>%
+  filter(! is.na(abundance)) %>%
+  ggplot(aes(x = timepoint, y = abundance, colour = component)) +
+    geom_line() +
+    labs(title = "Decomposed time series for *Janibacter hoylei*",
+         subtitle = "In residence 3 left palm",
+         x = "Time point",
+         y = "Relative abundance (%)",
+         colour = "Component") +
+    theme(plot.title = element_markdown())
+```
+
+This method appears to work quite well for extracting the seasonal component.
+
+To measure the strength of the seasonality, I'm going to use a modification of
+the formula from Wang et al.[^wang] (via [this
+source](https://otexts.com/fpp2/seasonal-strength.html)):
+
+$$F_{S} = max(0, 1 - \frac{Var(R_{t})}{Var(S_{t} + R_{t})})$$
+
+```{r}
+seasonality_strength <- function(time_series) {
+  time_series <- slice(time_series, -1, -nrow(time_series))
+  ss <- 1 - (sd(time_series$random) / sd(time_series$random + time_series$seasonal))
+  ss <- replace_na(ss, 0)
+  max(c(0, ss))
+}
+
+seasonality_strength(time_series)
+```
+
+To validate this method, I'll calculate the seasonality strength for all the
+species in left palm residence 3, then plot out the abundances of some high-,
+moderate- and low-seasonality species.
+
+```{r}
+seasonality_strengths <- abundances %>%
+  filter(site == "left palm") %>%
+  filter(location == "residence 3") %>%
+  filter(abundance > 0) %>%
+  select(species, timepoint, abundance) %>%
+  nest(abundances = c(timepoint, abundance)) %>%
+  mutate(ts = map(abundances, decompose_abundances)) %>%
+  filter(! is.na(ts)) %>%
+  mutate(seasonality_strength = map_dbl(ts, seasonality_strength))
+
+ggplot(seasonality_strengths, aes(x = seasonality_strength)) +
+  geom_histogram(bins = 100) +
+  labs(title = "Distribution of seasonality strengths",
+       subtitle = "For species in left palm, residence 3",
+       x = "Seasonality strength",
+       y = "Number of species")
+```
+
+Unsurprisingly, it looks like *Janibacter hoylei* was among the species with
+the highest seasonality. 
+
+I'll plot the abundances of a few high-seasonality species.
+
+```{r}
+plot_abundances <- function(spec, seasonality_strength) {
+
+  p <- abundances %>%
+    filter(site == "left palm") %>%
+    filter(location == "residence 3") %>%
+    filter(species == spec) %>% 
+    mutate_at("time", str_to_sentence) %>%
+    ggplot(aes(x = timepoint, y = abundance, fill = time)) +
+      geom_col() +
+      labs(
+        title = str_c(
+          "Abundance of *",
+          str_replace_all(spec, "_", " "),
+          "* (SS = ", signif(seasonality_strength, 2), ")"
+        ),
+        subtitle = "In left palm, residence 3",
+        x = "Time point",
+        y = "Abundance",
+        fill = "Time") +
+      theme(plot.title = element_markdown())
+
+  print(p)
+  return()
+}
+
+seasonality_strengths %>%
+  top_n(3, seasonality_strength) %>%
+  select(spec = species, seasonality_strength) %>%
+  pwalk(plot_abundances)
+```
+
+Next I'll pick some mid-range species.
+
+```{r}
+seasonality_strengths %>%
+  filter(seasonality_strength > 0.3) %>%
+  filter(seasonality_strength < 0.4) %>%
+  select(spec = species, seasonality_strength) %>%
+  pwalk(plot_abundances)
+```
+
+Interesting - these species seem to exhibit a break in the pattern about
+halfway through the study. I've noticed this before when looking at the
+indicator species.
+
+Finally, I'll look at some low-range species.
+
+```{r}
+seasonality_strengths %>%
+  top_n(4, -seasonality_strength) %>%
+  select(spec = species, seasonality_strength) %>%
+  pwalk(plot_abundances)
+```
+
+Some of these species do appear to display a diurnal pattern, but with breaks
+due to missing data or abundance dropping below the detection threshold. I
+think it's appropriate to err on the side of excluding these species from the
+high-seasonality strength group; I'd rather the seasonality strength have high
+specificity and low sensitivity than vice versa.
+
+Overall, this method appears to be excellent at discriminating species with a
+strong diurnal pattern from those without.
+
+## Seasonality for all species in all sites
+
+To investigate what species tend to show this diurnal pattern, I'll calculate
+the seasonality strengths for all species on all sites. I'll also add a
+significance estimate for seasonality strength permuting the hourly abundances
+999 times, decomposing the time series and calculating the seasonality
+strength.
+
+I'll begin with *Propionibacterium acnes* at residence 3 left palm as a proof
+of concept for this method.
+
+```{r}
+observed_ss <- abundances %>%
+  filter(site == "left palm") %>%
+  filter(location == "residence 3") %>%
+  filter(species == "Propionibacterium_acnes") %>%
+  decompose_abundances() %>%
+  seasonality_strength()
+observed_ss
+```
+
+```{r}
+permuted_seasonality_strengths <- function(x, permutations = 999) {
+  # Generate random permutations of abundance
+  tibble(
+    permutation = 1:permutations,
+    abundances = rep(list(select(x, timepoint, abundance)), permutations)
+    ) %>%
+    mutate(abundances = map(abundances, 
+                            ~ mutate(.x, abundance = sample(abundance)))) %>%
+  mutate(ts = future_map(abundances, decompose_abundances)) %>%
+  mutate(ss = map_dbl(ts, seasonality_strength)) %>%
+  pull(ss)
+}
+
+permuted_ss <- abundances %>%
+  filter(site == "left palm") %>%
+  filter(location == "residence 3") %>%
+  filter(species == "Propionibacterium_acnes") %>%
+  permuted_seasonality_strengths()
+```
+
+I'll plot out the distribution of permuted seasonality strengths compared to
+the observed value.
+
+```{r}
+tibble(ss = permuted_ss) %>%
+  ggplot(aes(x = ss)) +
+    geom_density() +
+    geom_vline(xintercept = observed_ss, colour = "red") +
+    labs(title = "Distribution of permuted and observed seasonality strengths",
+         subtitle = "For *Propionibacterium acnes* at residence 3 left palm",
+         x = "Seasonality strength",
+         y = "Density",
+         caption = glue("Red line gives observed value of {signif(observed_ss, 2)}")
+         ) +
+    theme(plot.subtitle = element_markdown())
+```
+
+This approach seems reasonable. I'll check the p-value calculation.
+
+```{r}
+sum(permuted_ss > observed_ss) / length(permuted_ss)
+```
+
+For performance reasons, I'll perform the calculation of seasonality strengths
+for all species at all sites in a separate script
+(`calculate_seasonality_strengths.R`).
+
+I'll load the computed seasonality strengths and p values.
+
+```{r}
+seasonality_strengths <- read_tsv("seasonality_strengths.tsv") %>%
+  mutate(is_significant = p < 0.05)
+```
+
+### Overview of seasonality strengths and significance
+
+I'll start by getting an overview of the distribution of strengths and
+significance. First I'll visualise the distribution of strengths over the
+entire dataset.
+
+```{r}
+seasonality_strengths %>%
+  ggplot(aes(x = seasonality_strength, colour = is_significant)) +
+    geom_density() +
+    labs(title = "Seasonality strengths and significance",
+         subtitle = "For all species at all sites",
+         x = "Seasonality strength",
+         y = "Density",
+         colour = "Significant")
+```
+
+This distribution looks quite reasonable, with the significant values tending
+to be higher (and fewer) than non-significant.
+
+I'll break the values down by site.
+
+```{r}
+seasonality_strengths %>%
+  mutate_at("site", str_to_sentence) %>%
+  ggplot(aes(x = is_significant, y = seasonality_strength)) +
+    geom_boxplot() +
+    facet_wrap(~ site) +
+    labs(title = "Seasonality strength by site and significance",
+         x = "Significant",
+         y = "Seasonality strength")
+```
+
+Again, the significant values are consistently higher than the non-significant.
+It's also pleasing to see that there are high and significant species at all
+sites, though unsurprisingly the skin sites appear to have the highest-strength
+species.
+
+To confirm that the strength and significance calculations are capturing
+species with a meaningful diurnal pattern, I'll inspect the abundance patterns
+of ten significantly high-strength species.
+
+```{r}
+plot_seasonality <- function(site, location, species, seasonality_strength, p,
+                             abundances, desc, ...) {
+  p <- abundances %>%
+    mutate_at("time", str_to_sentence) %>%
+      ggplot(aes(x = timepoint, y = abundance, fill = time)) +
+      geom_col() +
+      labs(title = glue("*{str_replace_all(species, '_', ' ')}* at {location} {site}"),
+           subtitle = glue("Seasonality strength = {signif(seasonality_strength, 2)}, p = {signif(p, 2)}"),
+           x = "Time point",
+           y = "Relative abundance (%)",
+           fill = "Time of day",
+           caption = desc) +
+      theme(plot.title = element_markdown())
+  print(p)
+}
+
+seasonality_strengths %>%
+  filter(is_significant) %>%
+  top_n(10, seasonality_strength) %>%
+  left_join(abundances) %>%
+  select(site, location, species, seasonality_strength, p, timepoint, time, abundance) %>%
+  nest(abundances = c(timepoint, time, abundance)) %>%
+  pwalk(plot_seasonality, desc = "Ten highest-strength significant species")
+```
+
+These all appear on inspection to have excellent genuine diurnal patterns.
+
+Next, I'll randomly select ten species with significant seasonality strengths for inspection.
+
+```{r}
+seasonality_strengths %>%
+  filter(is_significant) %>%
+  sample_n(10) %>%
+  left_join(abundances) %>%
+  select(site, location, species, seasonality_strength, p, timepoint, time, abundance) %>%
+  nest(abundances = c(timepoint, time, abundance)) %>%
+  pwalk(plot_seasonality, desc = "Ten randomly selected significant species")
+```
+
+Again, these all seem to show a true diurnal pattern.
+
+I'll take a look at the ten lowest-strength significant species.
+
+```{r}
+seasonality_strengths %>%
+  filter(is_significant) %>%
+  top_n(-10, seasonality_strength) %>%
+  left_join(abundances) %>%
+  select(site, location, species, seasonality_strength, p, timepoint, time, abundance) %>%
+  nest(abundances = c(timepoint, time, abundance)) %>%
+  pwalk(plot_seasonality, desc = "Ten lowest-strength significant species")
+```
+
+The worst that can be said for some of these is that they are only present for
+a small number of time points, although it's important to remember that time
+points where a sample was taken but that species was absent contribute strongly
+to the seasonality strength.
+
+As a check for false negatives, I'll now examine the ten highest-strength
+non-significant species.
+
+```{r}
+seasonality_strengths %>%
+  filter(! is_significant) %>%
+  top_n(10, seasonality_strength) %>%
+  left_join(abundances) %>%
+  select(site, location, species, seasonality_strength, p, timepoint, time, abundance) %>%
+  nest(abundances = c(timepoint, time, abundance)) %>%
+  pwalk(plot_seasonality, desc = "Ten highest-strength non-significant species")
+```
+
+This seems to make sense; there are some in there that probably are
+convincingly diurnal, but again I'm happy to err on the side of excluding
+borderline species.
+
+### Statistics on diurnal species
+
+For the purposes of the publication, I'm going to gather some basic summary
+statistics on the species with a significant diurnal pattern for each type.
+
+```{r}
+seasonality_strengths %>%
+  count(is_significant)
+```
+
+```{r}
+seasonality_strengths %>%
+  left_join(abundances) %>%
+  distinct(type, site, location, species, seasonality_strength, is_significant) %>%
+  group_by(type) %>%
+  summarise(n_seasonal = sum(is_significant),
+            percent_seasonal = sum(is_significant) * 100 / n(),
+            mean_strength = mean(seasonality_strength[is_significant]),
+            median_strength = median(seasonality_strength[is_significant]),
+            sd_strength = sd(seasonality_strength[is_significant]))
+```
+
+I'll also draw a plot showing the strength and numbers of diurnal species at each site.
+
+```{r}
+counts <- seasonality_strengths %>%
+  left_join(abundances) %>%
+  filter(is_significant) %>%
+  distinct(type, site, location, species) %>%
+  count(type)
+
+seasonality_strengths %>%
+  left_join(abundances) %>%
+  distinct(type, site, location, species, seasonality_strength, is_significant) %>%
+  filter(is_significant) %>%
+  left_join(counts) %>%
+  mutate(type = glue("{str_to_sentence(type)}\n(n = {n})")) %>%
+  ggplot(aes(x = type, y = seasonality_strength)) +
+    geom_boxplot() +
+    labs(
+      x = "Sample type",
+      y = "Seasonality strength *F*_s_",
+      colour = "Sample type"
+    ) +
+    theme_classic() %+replace% theme(axis.title.y = element_markdown(angle = 90))
+
+ggsave("seasonal_species_by_type.png", width = 6, height = 4)
+```
+
+### Confirmation of a genuine biological pattern
+
+There are two alternative hypotheses I can think to explain or partially
+explain these patterns of diurnal variation beyond them being genuine
+biological patterns:
+
+1. Methodological error: some systematic difference in the way morning and
+   evening samples were collected or processed added or removed abundance of
+   some species, causing them to have an apparent diurnal pattern of abundance.
+2. Compositional effects: only a small number of species at each site are
+   genuinely diurnal, but variation in their abundance(s) drive other species
+   into an apparently diurnal pattern through compositional effects [^kurtz].
+
+I'll try to falsify the hypothesis of a genuine biological pattern by looking
+for evidence in favour of these two alternative hypotheses.
+
+#### Methodological error
+
+If there is some methodological error that results in some species being added
+or removed systematically from morning and evening samples (e.g. a contaminant
+being systematically introduced into morning samples), it should effect the
+samples similarly. Methodological errors may be site specific, if for example
+there was a systematic contamination in the collection method used for one
+site. So, the species that show diurnality at a particular site should overlap
+considerably between locations.
+
+I'll look at the number and proportion of significantly diurnal species that
+are shared between the locations for each site.
+
+```{r}
+plot_diurnal_species_overlap <- function(sit) {
+  p <- seasonality_strengths %>%
+    filter(is_significant) %>%
+    filter(site == sit) %>%
+    select(location, species) %>%
+    nest(species = species) %>%
+    mutate_at("species", map, pull, "species") %>%
+    mutate(sets = set_names(species, location)) %>%
+    pull(sets) %>%
+    ggVennDiagram() + 
+      labs(title = glue("Overlap in significantly diurnal species at {sit}"))
+  print(p)
+}
+
+distinct(seasonality_strengths, site) %>%
+  pull(site) %>%
+  walk(plot_diurnal_species_overlap)
+```
+
+Clearly the number of unique diurnal species at each residence for each site
+far outnumbers the number of shared species. This is good evidence against
+methodological error. For the purposes of the manuscript I'll quantify the
+proportion of significantly diurnal species for each site that are
+location-unique.
+
+```{r}
+seasonality_strengths %>%
+  filter(is_significant) %>%
+  add_count(site, species, name = "locations") %>%
+  mutate(is_unique = locations == 1) %>%
+  count(site, is_unique) %>%
+  group_by(site) %>%
+  mutate(percentage = 100 * n / sum(n)) %>%
+  ungroup() %>%
+  mutate(is_unique = if_else(is_unique, "Unique", "Not unique")) %>%
+  select(site, is_unique, percentage) %>%
+  spread(is_unique, percentage, fill = 0)
+```
+
+Reagent contamination is unlikely given this pattern, but for completeness I'll
+examine this possibility. What proportion of diurnal species are present in the
+negative controls, compared to non-diurnal species present in the negative
+controls?
+
+```{r}
+control_species <- "../abundances/control_species_abundances.tsv" %>%
+  read_tsv() %>%
+  filter(abundance > 0) %>%
+  pull(species)
+
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  select(site, location, timepoint, species, is_significant) %>%
+  rename(is_diurnal = is_significant) %>%
+  mutate(is_diurnal = replace_na(is_diurnal, FALSE)) %>%
+  mutate(is_in_nc = species %in% control_species) %>%
+  count(is_diurnal, is_in_nc) %>%
+  group_by(is_diurnal) %>%
+  mutate(percentage = 100 * n / sum(n)) %>%
+  ungroup()
+```
+
+While this is a higher percentage, 75% of diurnal species were still not
+detected at all in the negative control samples, and the increase may be 
+attributable to latent variables (for example, the positive relationship
+between seasonality and total abundance). 
+
+Another way to examine the possibility of reagent contamination is to re-run
+the time series decompositions with all negative control species removed. In
+the interest of performance, I'll perform the time series decomposition and
+seasonality strength and significance calculations in a separate script,
+`calculate_no_nc_species_seasonality_strengths.R`.
+
+I'll load the computed seasonality strengths and p values.
+
+```{r}
+no_nc_seasonality_strengths <- read_tsv("no_nc_seasonality_strengths.tsv") %>%
+  mutate(is_significant_nc = p < 0.05) %>%
+  select(site, location, species, is_significant_nc)
+```
+
+What proportion of significantly seasonal species are removed because they are
+present in the contaminant species list, what proportion are further removed
+post removal of contaminant species, and what proportion remain?
+
+```{r}
+nc_species <- "../abundances/control_species_abundances.tsv" %>%
+  read_tsv() %>%
+  filter(abundance > 0) %>%
+  pull(species) %>%
+  unique()
+
+seasonality_strengths %>%
+  left_join(no_nc_seasonality_strengths) %>%
+  filter(is_significant) %>%
+  mutate(status = case_when(
+    is_significant_nc ~ "remains seasonal",
+    species %in% nc_species ~ "species in controls",
+    TRUE ~ "no longer seasonal post control species removal"
+  )) %>%
+  count(status) %>%
+  mutate(percentage = 100 * n / sum(n))
+```
+
+This is strong evidence that seasonality is not driven by species present in
+the negative control samples.
+
+#### Compositional effect
+
+I can think of two testable predictions from a compositional effect:
+
+1. If a single species or small number of species were driving the diurnal
+   pattern through a compositional effect, it would mean that when the driving
+   species increases in abundance the rest should decrease and vice versa. This
+   would introduce a strong assymetry in the diurnal patterns of significantly
+   diurnal species, with the vast majority being more abundant at the same time
+   of day.
+2. Compositional effects can be eliminated by removing the species driving
+   them. So, removing some high-abundance diurnal species from a site should
+   cause several of the other diurnal species to lose their significant pattern
+   of diurnality.
+
+To test the first prediction, I'll classify the diurnal species at each site as
+morning-abundant or evening-abundant, and look at the proportion of each at
+each site. If the compositional effect hypothesis is true, these should be
+highly skewed; if it is false, they should be closer to even.
+
+```{r}
+seasonality_strengths %>%
+  filter(is_significant) %>%
+  left_join(abundances) %>%
+  arrange(type) %>%
+  mutate_at("site", fct_inorder) %>%
+  count(site, location, species, time, wt = abundance, name = "total_abundance") %>%
+  spread(time, total_abundance) %>%
+  mutate(preference = if_else(evening > morning, "evening", "morning")) %>%
+  count(site, location, preference) %>%
+  mutate_at(c("site", "preference", "location"), str_to_sentence) %>%
+  ggplot(aes(x = location, y = n, fill = preference, label = n)) +
+    geom_col() +
+    labs(title = "Time-of-day preferences of diurnal species",
+         x = "Location",
+         y = "Number of species",
+         fill = "Time-of-day preference") +
+    geom_bar_text(position = "stack", place = "centre") +
+    facet_wrap(~ site) +
+    coord_flip()
+```
+
+A bit of a mixed bag here. While some sites and locations show a fairly even
+mix of morning and evening preferring species, others (such as subway exit
+handrail) appear highly biased towards one time of day. However, it's worth
+noting that a site that has 100% species preference for a particular time of
+day is also evidence against a compositional effect. Taking this into account,
+by my reckoning 12 of the 18 site/location combinations are inconsistent with a
+compositional effect.
+
+To test the second prediction, I'll first identify a list of sites where there
+is a single species with one or the other time-of-day preference, and at more
+than one species with the other preference.
+
+```{r}
+candidate_compositional_sites <- seasonality_strengths %>%
+  filter(is_significant) %>%
+  left_join(abundances) %>%
+  count(site, location, species, time, wt = abundance, name = "total_abundance") %>%
+  spread(time, total_abundance) %>%
+  mutate(preference = if_else(evening > morning, "evening", "morning")) %>%
+  count(site, location, preference) %>%
+  group_by(site, location) %>%
+  filter(1 %in% n) %>%
+  ungroup() %>%
+  add_count(site, location, name = "n_preferences") %>%
+  filter(n_preferences == 2) %>%
+  filter(n == 1) %>%
+  distinct(site, location, preference)
+
+candidate_compositional_species <- seasonality_strengths %>%
+  filter(is_significant) %>%
+  left_join(abundances) %>%
+  count(site, location, species, time, wt = abundance, name = "total_abundance") %>%
+  spread(time, total_abundance) %>%
+  mutate(preference = if_else(evening > morning, "evening", "morning")) %>%
+  inner_join(candidate_compositional_sites) %>%
+  select(-evening, -morning) 
+
+candidate_compositional_species
+```
+
+This identifies three sites which are candidates for a strong compositional
+effect, in keeping with my eyeballing of the previous plot.
+
+Next I'll identify the species that shows the strong singular preference at
+each of these locations and confirm that it is high-abundance.
+
+```{r}
+candidate_compositional_species %>%
+  left_join(abundances) %>%
+  select(site, location, species, preference, timepoint, time, abundance) %>%
+  nest(abundances = c(timepoint, time, abundance)) %>%
+  pwalk(function(site, location, species, preference, abundances) {
+    p <- abundances %>%
+      mutate_at(c("time"), str_to_sentence) %>%
+      ggplot(aes(x = timepoint, y = abundance, fill = time)) +
+        geom_col() +
+        labs(title = glue("*{str_replace_all(species, '_', ' ')}* abundance at {location} {site}"),
+             subtitle = glue("{str_to_sentence(preference)} preference"),
+             x = "Time point",
+             y = "Relative abundance (%)",
+             fill = "Time of day") +
+      theme(plot.title = element_markdown())
+    print(p)
+  })
+```
+
+Of the four candidates, two had high-abundance singular time-of-day
+preference species.
+
+To test for any compositional effect of these species at these sites, I'll
+re-run the seasonality strength and significance analysis for these three sites
+with the singular species removed and the remaining species relative abundances
+re-normalised. If there is a strong compositional effect, this should cause
+the total number of significantly diurnal species at these sites to drop.
+
+Before doing this, I'll check the total number of significantly diurnal species
+at these sites. (There's not much point running the analysis if there are only
+one or two other diurnal species in addition to the high-abundance one.)
+
+```{r}
+seasonality_strengths %>%
+  inner_join(candidate_compositional_sites) %>%
+  filter(is_significant) %>%
+  count(site, location, name = "n_species")
+```
+
+Yes, there are enough diurnal species at these sites for the analysis to be
+useful.
+
+In the interest of performance, once again I'll perform the time series
+decomposition and seasonality strength and significance calculations in a
+separate script, `calculate_compositional_seasonality_strengths.R`. I'll write
+the list of candidate composition-driving species to file for use by this
+script.
+
+```{r}
+write_tsv(candidate_compositional_species, "candidate_compositional_species.tsv")
+```
+
+I'll load the results.
+
+```{r}
+compositional_seasonality_strengths <- read_tsv("compositional_seasonality_strengths.tsv")
+```
+
+I'll compare the number of significantly diurnal species at the three sites in
+the 'normal' analysis and the 'non-compositional' analysis.
+
+```{r}
+compositional_seasonality_strengths %>%
+  filter(p < 0.05) %>%
+  count(site, location, name = "n_species_after") %>%
+  full_join(seasonality_strengths %>%
+              inner_join(candidate_compositional_sites) %>%
+              filter(is_significant) %>%
+              count(site, location, name = "n_species")) %>%
+  mutate(percentage = 100 * n_species_after / n_species) %>%
+  left_join(candidate_compositional_species %>% select(site, location, species))
+```
+
+### Characterisation of diurnal species
+
+I would like to characterise the diurnal species with respect to the following
+properties:
+
+- Abundance
+- Taxonomy
+- Dunn source
+
+#### Abundance
+
+I'll begin by examining the relationship between abundance and seasonality
+strength across the entire dataset, including species without significant
+seasonality.
+
+```{r}
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(! is.na(seasonality_strength)) %>%
+  ggplot(aes(x = abundance, y = seasonality_strength, colour = is_significant)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    geom_lmannotate() +
+    labs(title = "Abundance and seasonality strength",
+         subtitle = "Includes all species, sites and time points",
+         x = "Abundance",
+         y = "Seasonality strength",
+         colour = "Significant")
+```
+
+There is some suggestion of a positive relationship here.
+
+Next I'll focus on only those species with significant seasonality, and break
+the data down by site.
+
+```{r}
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(! is.na(seasonality_strength)) %>%
+  filter(is_significant) %>%
+  mutate_at("site", str_to_sentence) %>%
+  ggplot(aes(x = abundance, y = seasonality_strength)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    geom_lmannotate() +
+    facet_wrap(~ site) +
+    labs(title = "Abundance and seasonality strength",
+         subtitle = "Includes all sites and time points, and species with significant seasonality",
+         x = "Abundance",
+         y = "Seasonality strength")
+```
+
+With the exception of the door knob site, there again appears to be a positive
+relationship.
+
+So far I've been individually considering abundance at all time points. I'll
+now repeat the same correlation, but taking the mean abundance across all time
+points of each species at each site. This is probably a more meaningful
+comparison, given that the species with the strongest diurnal cycles likely
+have roughly 50% of time points at very low abundance or absence.
+
+```{r}
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(! is.na(seasonality_strength)) %>%
+  filter(is_significant) %>%
+  group_by(site, location, species, seasonality_strength) %>%
+  summarise(abundance = mean(abundance)) %>%
+  ungroup() %>%
+  filter(abundance > 0) %>%
+  mutate_at("site", str_to_sentence) %>%
+  ggplot(aes(x = abundance, y = seasonality_strength)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    geom_lmannotate() +
+    facet_wrap(~ site) +
+    scale_x_log10() +
+    labs(title = "Abundance and seasonality strength",
+         subtitle = "Includes all sites, and species with significant seasonality",
+         x = "Mean relative abundance (log 10 scale)",
+         y = "Seasonality strength")
+```
+
+A similar pattern, again with the lack of correlation for the door knob site.
+
+I'll complete the analysis by examining the entire data set again, and
+calculating Spearman's ρ.
+
+```{r}
+spearman <- abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(! is.na(seasonality_strength)) %>%
+  filter(is_significant) %>%
+  group_by(site, location, species, seasonality_strength) %>%
+  summarise(abundance = mean(abundance)) %>%
+  ungroup() %>%
+  filter(abundance > 0) %>%
+  do(cor.test(.$abundance, .$seasonality_strength, method = "spearman") %>% tidy())
+
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(! is.na(seasonality_strength)) %>%
+  filter(is_significant) %>%
+  group_by(site, location, species, seasonality_strength) %>%
+  summarise(abundance = mean(abundance)) %>%
+  ungroup() %>%
+  filter(abundance > 0) %>%
+  mutate_at("site", str_to_sentence) %>%
+  ggplot(aes(x = abundance, y = seasonality_strength)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    scale_x_log10() +
+    labs(title = "Abundance and seasonality strength",
+         subtitle = "Includes all sites, and species with significant seasonality",
+         x = "Mean relative abundance (log 10 scale)",
+         y = "Seasonality strength",
+         caption = glue("Spearman's ρ = {signif(spearman$estimate, 2)}, p = {signif(spearman$p.value, 2)}"))
+```
+
+Conclusion: abundance and seasonality strength are weakly by significantly
+positively correlated.
+
+Finally, I'll ask the question: do diurnal species tend to be more abundant
+than non-diurnal ones?
+
+```{r}
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(! is.na(seasonality_strength)) %>%
+  group_by(site, location, species, is_significant, seasonality_strength) %>%
+  summarise(abundance = mean(abundance)) %>%
+  ungroup() %>%
+  ggplot(aes(x = is_significant, y = abundance)) +
+    geom_boxplot() +
+    geom_signif(comparisons = list(c("TRUE", "FALSE"))) +
+    labs(title = "Abundance of species with and without a diurnal pattern",
+         x = "Significant diurnal pattern",
+         y = "Mean relative abundance (%, log 10 scale)") +
+
+    scale_y_log10()
+```
+
+```{r}
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(! is.na(seasonality_strength)) %>%
+  group_by(site, location, species, is_significant, seasonality_strength) %>%
+  summarise(abundance = mean(abundance)) %>%
+  ungroup() %>%
+  # filter(abundance > 0) %>%
+  group_by(is_significant) %>%
+  summarise(mean(abundance), sd(abundance))
+```
+
+Once again, this supports the conclusion that diurnal species tend to be more
+abundant, even taking into account the fact that they will be low-abundance or
+absent at about 50% of time points.
+
+#### Taxonomy
+
+I'd like to investigate how diurnality distributes across taxonomy.
+
+As a starting point, I'll visualise the abundance of phyla and families at each
+site for all species, averaged across all locations.
+
+```{r}
+top_phyla <- abundances %>%
+  count(phylum, wt = abundance) %>%
+  top_n(11, wt = n) %>%
+  pull(phylum) %>%
+  unique()
+
+abundances %>%
+  group_by(site, location, species) %>%
+  summarise(abundance = mean(abundance)) %>%
+  ungroup() %>%
+  group_by(site, species) %>%
+  summarise(abundance = mean(abundance)) %>%
+  ungroup() %>%
+  left_join(abundances %>% select(species, phylum, family) %>% distinct) %>%
+  group_by(site, phylum, family) %>%
+  summarise(abundance = sum(abundance)) %>%
+  ungroup() %>%
+  mutate_at("phylum", fct_other, keep = top_phyla) %>%
+  mutate_at("phylum", fct_relabel, binom) %>%
+  mutate_at("site", str_to_sentence) %>%
+  ggplot(aes(area = abundance, label = family, fill = phylum)) +
+    geom_treemap() +
+    geom_treemap_text(fontface = "italic") +
+    facet_wrap(~ site) +
+    scale_fill_brewer(palette = "Set3") +
+    labs(fill = "Phylum") +
+    theme(legend.text = element_markdown())
+```
+
+Unsurprisingly, dominated by the *Actinobacteria* and especially
+*Propionibacterium*.
+
+I'll repeat the same visualisation, but this time looking only at species with
+significant diurnality.
+
+```{r}
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(is_significant) %>%
+  group_by(site, location, species) %>%
+  summarise(abundance = mean(abundance)) %>%
+  ungroup() %>%
+  group_by(site, species) %>%
+  summarise(abundance = mean(abundance)) %>%
+  ungroup() %>%
+  left_join(abundances %>% select(species, phylum, family) %>% distinct) %>%
+  group_by(site, phylum, family) %>%
+  summarise(abundance = sum(abundance)) %>%
+  ungroup() %>%
+  complete(site, phylum, family, fill = list(abundance = 0)) %>%
+  mutate_at("phylum", fct_other, keep = top_phyla) %>%
+  mutate_at("phylum", fct_relabel, binom) %>%
+  mutate_at("site", str_to_sentence) %>%
+  ggplot(aes(area = abundance, label = family, fill = phylum)) +
+    geom_treemap(colour = "black") +
+    geom_treemap_text(fontface = "italic", grow = TRUE, place = "centre", min.size = 0) +
+    facet_wrap(~ site) +
+    scale_fill_brewer(palette = "Set3") +
+    labs(fill = "Phylum") +
+    theme(legend.text = element_markdown())
+
+ggsave("diurnal_species_treemaps.png", width = 8, height = 6, dpi = 300)
+```
+
+Some impressions from these visualisations:
+
+- *Actinobacteria* appear more dominant among the diurnal species
+- *Gordoniaceae* and *Dermacoccaceae* appear over-represented in the diurnal species
+
+I wonder if this suggests that skin commensals are more likely to be diurnal?
+
+### Dunn source
+
+Which brings us neatly to the question of diurnality by Dunn source.
+
+```{r}
+dunn <- tribble(
+                   ~family , ~source             ,
+  "Propionibacteriaceae"   , "human skin"        ,
+  "Staphylococcaceae"      , "human skin"        ,
+  "Corynebacteriaceae"     , "human skin"        ,
+  "Pasteurellaceae"        , "human oral cavity" ,
+  "Fusobacteriaceae"       , "human oral cavity" ,
+  "Veillonellaceae"        , "human oral cavity" ,
+  "Neisseriaceae"          , "human oral cavity" ,
+  "Campylobacteraceae"     , "human oral cavity" ,
+  "Leptotrichiaceae"       , "human oral cavity" ,
+  "Actinomycetaceae"       , "human oral cavity" ,
+  "Prevotellaceae"         , "human oral cavity" ,
+  "Bacteroidaceae"         , "human stool"       ,
+  "Rikenellaceae"          , "human stool"       ,
+  "Ruminococcaceae"        , "human stool"       ,
+  "Lachnospiraceae"        , "human stool"       ,
+  "Enterobacteriaceae"     , "leaf"              ,
+  "Flexibacteraceae"       , "leaf"              ,
+  "Deinococcaceae"         , "leaf"              ,
+  "Acidobacteria"          , "soil"              ,
+  "Bradyrhizobiaceae"      , "soil"              ,
+  "Hyphomicrobiaceae"      , "soil"              ,
+  "Sinobacteraceae"        , "soil"
+)
+
+abundances %>%
+  left_join(dunn) %>%
+  left_join(seasonality_strengths) %>%
+  mutate_at("is_significant", replace_na, FALSE) %>%
+  count(site, location, source, is_significant, wt = abundance, name = "abundance") %>%
+  mutate_at(c("site", "source", "location"), str_to_sentence) %>%
+  mutate_at("location", fct_rev) %>%
+  mutate_at("site", str_wrap, 10) %>%
+  filter(! is.na(source)) %>%
+  ggplot(aes(x = location, y = abundance, fill = is_significant)) +
+    geom_col(position = "fill") +
+    facet_grid(site ~ source, scales = "free") +
+    labs(title = "Abundances of Dunn source families",
+         x = "Source",
+         y = "Total proportional abundance",
+         fill = "Significantly seasonal") +
+    coord_flip() +
+    scale_y_continuous(breaks = c(0, 0.5, 1), labels = c("0", "0.5", "1")) +
+    scale_fill_discrete(breaks = c(TRUE, FALSE))
+```
+
+Impressions:
+
+- While human skin families are clearly the most strongly associated with
+  seasonality, the pattern is quite site- and location-dependent.
+- In some sites and locations (e.g. residence 1 bed headboard) there is a
+  strong association with other sources (e.g. human stool)
+- Overall, this suggests that the diurnal species may be quite specific to site
+  and location.
+
+## Diurnal species with similar abundance patterns on skin and indoor surface
+
+To better understand the role of diurnal species in microbial matching, and of
+the underlying forces that cause the diurnal pattern, I'm going to try and
+identify highly diurnal species with similar abundance patterns on skin and
+indoor surface within the same location.
+
+As a proof of concept, I'll start with Residence 1. First, I'll examine the
+degree to which diurnal species are shared between left and right palm.
+
+```{r}
+shared_dirunal_species <- abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(location == "residence 1") %>%
+  filter(type == "skin") %>%
+  filter(is_significant) %>%
+  distinct(site, species) %>%
+  count(species) %>%
+  filter(n == 2)
+
+shared_dirunal_species
+```
+
+It looks like there are four species shared between left and right palm at this
+site. I'll plot out their abundances over time to see whether the diurnal
+patterns are similar.
+
+```{r}
+abundances %>%
+  filter(location == "residence 1") %>%
+  filter(type == "skin") %>%
+  filter(species %in% shared_dirunal_species$species) %>%
+  mutate_at("site", str_to_sentence) %>%
+  mutate_at("species", binom) %>%
+  mutate_at("species", str_remove_all, "\\*") %>%
+  ggplot(aes(x = timepoint, y = abundance, colour = site)) +
+    geom_line() +
+    facet_wrap(~ species, scales = "free") +
+    labs(title = "Abundance pattern of significantly diurnal species",
+         subtitle = "Showing species with significant seasonality in both skin sites at Residence 1",
+         x = "Time point",
+         y = "Relative abundance (%)",
+         colour = "Site") +
+    theme(strip.text.x = element_text(face = "italic"))
+```
+
+Yes, it appears the patterns are generally similar. I'll examine the same
+question by looking for a linear relationship between the abundances.
+
+```{r}
+abundances %>%
+  filter(location == "residence 1") %>%
+  filter(type == "skin") %>%
+  filter(species %in% shared_dirunal_species$species) %>%
+  mutate_at("species", binom) %>%
+  mutate_at("species", str_remove_all, "\\*") %>%
+  select(species, site, timepoint, abundance) %>%
+  spread(site, abundance) %>%
+  ggplot(aes(x = `left palm`, y = `right palm`)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    geom_lmannotate() +
+    facet_wrap(~ species, scales = "free") +
+    labs(title = "Abundances of significantly diurnal species",
+         subtitle = "Showing species with significant seasonality in both skin sites at Residence 1",
+         x = "Left palm relative abundance (%)",
+         y = "Right palm relative abundance (%)") +
+    theme(strip.text.x = element_text(face = "italic"))
+```
+
+Yes, there certainly appears to be entrainment between left and right palm.
+
+Next I'll look at diurnal species shared between left/right palm and bed headboard.
+
+```{r}
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(location == "residence 1") %>%
+  filter(site %in% c("left palm", "bed headboard")) %>%
+  filter(is_significant) %>%
+  distinct(site, species) %>%
+  count(species) %>%
+  filter(n == 2)
+```
+
+```{r}
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(location == "residence 1") %>%
+  filter(site %in% c("right palm", "bed headboard")) %>%
+  filter(is_significant) %>%
+  distinct(site, species) %>%
+  count(species) %>%
+  filter(n == 2)
+```
+
+There don't seem to be any. I'll check for left/right palm and door knob.
+
+```{r}
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(location == "residence 1") %>%
+  filter(site %in% c("left palm", "door knob")) %>%
+  filter(is_significant) %>%
+  distinct(site, species) %>%
+  count(species) %>%
+  filter(n == 2)
+```
+
+```{r}
+abundances %>%
+  left_join(seasonality_strengths) %>%
+  filter(location == "residence 1") %>%
+  filter(site %in% c("right palm", "door knob")) %>%
+  filter(is_significant) %>%
+  distinct(site, species) %>%
+  count(species) %>%
+  filter(n == 2)
+```
+
+There is one species , *Aerococcus viridans*, with a significant diurnal
+pattern at both left palm and door knob. I'll examine the relationship between
+the abundances at the two sites.
+
+```{r}
+abundances %>%
+  filter(location == "residence 1") %>%
+  filter(site %in% c("left palm", "door knob")) %>%
+  filter(species == "Aerococcus_viridans") %>%
+  select(site, timepoint, abundance) %>%
+  spread(site, abundance) %>%
+  ggplot(aes(x = `left palm`, y = `door knob`)) +
+    geom_point() +
+    geom_smooth(method = "lm") +
+    geom_lmannotate() +
+    labs(title = "Abundances of *Aerococcus viridans*",
+         subtitle = "At Residence 1 left palm and door knob",
+         x = "Left palm relative abundance (%)",
+         y = "Door knob relative abundance (%)") +
+    theme(plot.title = element_markdown())
+```
+
+There doesn't appear to be a significant relationship.
+
+## Family *Gordoniaceae* in location 3
+
+To illustrate the overlap between diurnality and families that distinguish each
+location, I'm going to look more closely at diurnal species from the family
+*Gordoniaceae* in location 3.
+
+```{r}
+taxonomy <- abundances %>%
+  distinct(domain, phylum, class, order, family, genus, species)
+
+r3_gordoniaceae <- seasonality_strengths %>%
+  left_join(taxonomy) %>%
+  filter(location == "residence 3") %>%
+  filter(is_significant) %>%
+  filter(family == "Gordoniaceae") 
+
+r3_gordoniaceae
+
+abundances %>%
+  inner_join(r3_gordoniaceae) %>%
+  ggplot(aes(x = timepoint, y = abundance)) +
+    geom_col() +
+    facet_grid(site ~ species, scales = "free_y")
+```
+
+## Diurnality figure for manuscript
+
+```{r}
+seasonality_strengths %>%
+  filter(is_significant) %>%
+  left_join(abundances) %>%
+  group_by(site, location, species, time) %>%
+  mutate(mean_abundance = mean(abundance)) %>%
+  group_by(site, location, species) %>%
+  mutate(max_mean_abundance = max(mean_abundance)) %>%
+  mutate(dominant_time = ifelse(mean_abundance == max_mean_abundance, time, NA)) %>%
+  mutate(dominant_time = unique(na.omit(dominant_time))) %>%
+  select(-mean_abundance, -max_mean_abundance) %>%
+  ungroup() %>%
+  group_by(location, site, species) %>%
+  mutate(abundance = (abundance - min(abundance)) / (max(abundance) - min(abundance))) %>%
+  mutate(abundance = replace_na(abundance, 0)) %>%
+  ungroup() %>%
+  arrange(dominant_time) %>%
+  mutate(species = fct_inorder(species)) %>%
+  mutate(place = glue("{str_to_sentence(site)}, {str_to_sentence(location)}")) %>%
+  mutate(day = timepoint) %>%
+  ggplot(aes(x = day, y = species, fill = abundance)) +
+    geom_tile() +
+    facet_grid(place ~ NA, scales = "free_y", space = "free") +
+    theme_classic() %+replace% theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.title.y = element_blank(),
+      axis.line.y = element_blank(),
+      strip.text.y = element_text(angle = 0, hjust = 1),
+      strip.text.x = element_blank(),
+      strip.background = element_blank(),
+      strip.placement = "inside",
+      legend.position = "bottom"
+    ) +
+  labs(x = "Day", fill = "Abundance (standardised)") +
+  scale_x_continuous(breaks = (1:10 * 2) - 0.5, labels = 1:10)
+
+ggsave("diurnality_heatmap.pdf")
+```
+
+[^kurtz]: Kurtz ZD, Müller CL, Miraldi ER, Littman DR, Blaser MJ, Bonneau RA.
+Sparse and compositionally robust inference of microbial ecological networks.
+PLoS Comput Biol. 2015;11(5):e1004226. doi:10.1371/journal.pcbi.1004226.
+
+[^wang]: Wang X, Smith K, Hyndman R. Characteristic-Based Clustering for Time
+Series Data. Data Min Knowl Disc. 2006;13(3):335-364.
+doi:10.1007/s10618-005-0039-x.

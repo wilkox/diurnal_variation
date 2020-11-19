@@ -1,0 +1,386 @@
+---
+title: Analyse results of SourceTracker-based microbial matching
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(fs)
+library(ggfittext)
+library(vegan)
+library(wilkoxmisc)
+library(ggtext)
+set.seed(2)
+```
+
+The purpose of this analysis is to analyse the results of the
+SourceTracker-based microbial matching. This is part of my broader aims of
+comparing the accuracy of different matching methods and of testing for an
+effect of sampling delay on matching accuracy over the short time period of
+this study.
+
+## Load and tidy the SourceTracker source predictions
+
+```{r}
+metadata <- read_tsv("../metadata/metadata.tsv") %>%
+  rename_all(~ str_c("sink_", .))
+
+source_predictions <- tibble(sp_dir = dir_ls("source_predictions")) %>%
+  mutate(source_timepoint = path_file(sp_dir)) %>%
+  mutate(sp_path = path(sp_dir, "sink_predictions", ext = "txt")) %>%
+  mutate(sp = map(sp_path, read_tsv)) %>%
+  select(source_timepoint, sp) %>%
+  unnest(sp) %>%
+  rename(sink_sample = SampleID) %>%
+  gather("source_location", "proportion", -source_timepoint, -sink_sample) %>%
+  left_join(metadata) %>%
+  type_convert()
+```
+
+## Visualise source predictions for all sink sites and time point
+
+I'll plot an overview of the source predictions for each sink site and time
+point, with the sources grouped by same location, different location and
+unknown.
+
+```{r}
+source_predictions %>%
+  mutate(source = case_when(
+    source_location == "Unknown" ~ "Unknown",
+    source_location == sink_location ~ "Same location",
+    ! source_location == sink_location ~ "Different location",
+    TRUE ~ NA_character_)) %>%
+  count(source_timepoint, sink_sample, sink_site, source, wt = proportion, 
+        name = "proportion") %>%
+  mutate_at("sink_site", str_to_sentence) %>%
+  mutate_at("source", fct_relevel, "Same location", "Different location", "Unknown") %>%
+  ggplot(aes(x = sink_sample, y = proportion, fill = source)) +
+    geom_col(position = "stack") +
+    facet_grid(source_timepoint ~ sink_site, scales = "free_x") +
+    labs(title = "SourceTracker predicted sources for all surface sites",
+         subtitle = "Faceted by source time point",
+         x = "Surface sample",
+         y = "Predicted source proportion",
+         fill = "Source") +
+    scale_fill_manual(values = c("#8dd3c7", "#fb8072", "grey")) +
+    scale_y_continuous(breaks = c(0, 0.5, 1)) +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+```
+
+Impression:
+
+- For the household surface sites, same-location skin was the majority source for
+  most time points.
+- This does not hold for public surface sites, where different-location or
+  unknown sources predominated (though this does not necessarily mean that the
+  same location was not the single major predicted source).
+- There is no clearly visible effect of time point.
+- Within the bed headboard site, and to a lesser extend the door knob site,
+  there is clearly some heterogeneity within the sink samples; this likely
+  relates to the location from which these samples were taken.
+
+## Matching accuracy
+
+I'll now proceed to determining the matching accuracy with the SourceTracker
+method. I'll use my usual criterion for determining a match: the single
+non-Unknown source with the highest predicted source proportion will be awarded
+the match for a given sink sample. If the matching source is from the same
+location as the sink sample, the match is considered accurate.
+
+I want to answer the following questions regarding the matching accuracy:
+
+- What is the overall accuracy rate?
+- What is the accuracy rate broken down by sink site?
+- How does sampling delay (time elapsed between taking a reference sample and
+  taking a query sample; a negative value means the query sample was taken
+  before the reference sample) affect matching accuracy, both globally and by
+  site?
+- How does the time of day at which the query and reference was taken affect
+  matching accuracy (diurnality effect)?
+
+### Determining match and accuracy for each query
+
+First, I'll count the number of matching attempts with ties.
+
+```{r}
+source_predictions %>%
+  filter(! source_location == "Unknown") %>%
+  group_by(source_timepoint, sink_sample) %>%
+  mutate(winner = proportion == max(proportion)) %>%
+  ungroup() %>%
+  filter(winner) %>%
+  count(source_timepoint, sink_sample) %>%
+  filter(n > 1) %>%
+  select(sample = sink_sample) %>%
+  left_join(read_tsv("../metadata/metadata.tsv")) %>%
+  mutate_at(c("site", "location"), str_to_sentence) %>%
+  ggplot(aes(x = site, fill = location)) +
+    geom_bar(position = "stack") +
+    labs(title = "SourceTracker matching attempts with ties, by sink site and location",
+         x = "Site",
+         y = "Attempts",
+         fill = "Location")
+```
+
+There were 133 ties. All were for park/campus handrail sinks. I want to
+visualise the proportion of all runs this represents, to better understand the
+effect of removing these runs.
+
+```{r}
+source_predictions %>%
+  filter(! source_location == "Unknown") %>%
+  group_by(source_timepoint, sink_sample) %>%
+  mutate(winner = proportion == max(proportion)) %>%
+  ungroup() %>%
+  filter(winner) %>%
+  count(source_timepoint, sink_sample) %>%
+  mutate(tie = n > 1) %>%
+  select(sample = sink_sample, source_timepoint, tie) %>%
+  left_join(read_tsv("../metadata/metadata.tsv")) %>%
+  select(source_timepoint, site, location, tie) %>%
+  mutate_at(c("site", "location"), str_to_sentence) %>%
+  mutate(location = str_remove(location, "Residence ")) %>%
+  ggplot(aes(x = location, fill = tie)) +
+    geom_bar(position = "stack") +
+    facet_grid(source_timepoint ~ site) +
+    labs(title = "SourceTracker matching attempts with ties",
+         subtitle = "By source timepoint and sink site and location",
+         x = "Residence",
+         y = "Attempts",
+         fill = "Tied?") +
+    scale_y_continuous(breaks = c(0, 10, 20))
+```
+
+Fortunately, they are a small proportion overall and spread over three
+different residences. Still, I'd like to better understand why this is
+happening, especially as the original dataset did not have so many ties.
+
+I'll make a list of the runs that produced ties, and look more closely at the
+source predictions for these runs.
+
+```{r}
+tied_attempts <- source_predictions %>%
+  filter(! source_location == "Unknown") %>%
+  group_by(source_timepoint, sink_sample) %>%
+  mutate(winner = proportion == max(proportion)) %>%
+  ungroup() %>%
+  filter(winner) %>%
+  count(source_timepoint, sink_sample) %>%
+  filter(n > 1) %>%
+  select(-n)
+
+tied_attempts %>%
+  left_join(source_predictions) %>%
+  distinct(source_location, proportion)
+```
+
+Essentially, for these runs there was zero predicted contribution from any
+known source. I smell a rat here.
+
+```{r}
+tied_attempts %>%
+  count(sink_sample)
+```
+
+It doesn't seem to be an issue with the sink samples themselves, as they didn't
+all tie all runs but only some runs (i.e. some source timepoints).
+
+```{r}
+tied_attempts %>%
+  distinct(sink_sample)
+```
+
+There are only 13 sink samples in total that failed. From eyeballing the
+species abundances for these sample, I didn't notice anything out of the
+ordinary - they seemed to have plenty of species shared with the skin (source)
+samples for the timepoints that failed.
+
+Just for the sake of it, I'm going to ordinate the Bray-Curtis dissimilarities
+for all the park/campus handrail samples and see if these ones cluster away.
+
+```{r}
+abundances <- read_tsv("../abundances/species_abundances_decontaminated.tsv")
+
+abundances %>%
+  filter(site == "park/campus handrail") %>%
+  select(sample, species, abundance) %>%
+  arrange(sample) %>%
+  spread(species, abundance, fill = 0) %>%
+  column_to_rownames("sample") %>%
+  as.matrix %>%
+  vegdist() %>%
+  metaMDS(try = 100) %>%
+  .$points %>% 
+  as.data.frame %>% 
+  rownames_to_column("sample") %>% 
+  as_tibble() %>%
+  mutate(tied = sample %in% tied_attempts$sink_sample) %>%
+  ggplot(aes(x = MDS1, y = MDS2, colour = tied)) +
+    geom_point() +
+    labs(title = "nMDS of all park/campus handrail samples",
+         subtitle = "Based on Bray-Curtis dissimilarities",
+         colour = "Tied?")
+```
+
+Yes, these samples are all peripheral to the central cluster. I'm going to
+compare their taxonomic profiles.
+
+```{r}
+abundances %>%
+  filter(site == "park/campus handrail") %>%
+  mutate(tied = sample %in% tied_attempts$sink_sample) %>%
+  mutate(species = fct_lump(species, n = 11, w = abundance)) %>%
+  mutate_at("species", fct_relevel, "Other", after = Inf) %>%
+  count(tied, location, timepoint, species, wt = abundance, name = "abundance") %>%
+  mutate(tied = if_else(tied, "Tied", "Not tied")) %>%
+  mutate_at("species", binom) %>%
+  mutate_at("location", str_to_sentence) %>%
+  ggplot(aes(x = timepoint, y = abundance, fill = species)) +
+    geom_col(position = "stack") +
+    facet_grid(tied ~ location, scales = "free_x") +
+    scale_fill_brewer(palette = "Set3") +
+    labs(title = "Taxonomic composition of park/campus handrail sites",
+         x = "Time point",
+         y = "Relative abundance (%)",
+         fill = "Species") +
+    theme(legend.text = element_markdown())
+```
+
+With the exception of the Residence 4 sample (which was dominated by a single
+*Halomonas* species – a likely contaminant), there's nothing strikingly
+different about the tied samples.
+
+```{r}
+matches <- source_predictions %>%
+  filter(! source_location == "Unknown") %>%
+  group_by(source_timepoint, sink_sample) %>%
+  mutate(winner = proportion == max(proportion)) %>%
+  ungroup() %>%
+  filter(winner) %>%
+  add_count(source_timepoint, sink_sample) %>%
+  filter(n == 1) %>%
+  select(-n) %>%
+  mutate(accurate = source_location == sink_location) %>%
+  select(-proportion)
+```
+
+I'll write this to file for later use.
+
+```{r}
+write_tsv(matches, "st_matches.tsv")
+```
+
+## Overall and site accuracy rates
+
+The overall accuracy rate:
+
+```{r}
+matches %>%
+  summarise(accuracy = sum(accurate) / n())
+```
+
+This is even a little higher than I would expect. Now I'll calculate the rate
+broken down by type:
+
+```{r}
+matches %>%
+  group_by(sink_type) %>%
+  summarise(accuracy = sum(accurate) / n())
+```
+
+And by site:
+
+```{r}
+matches %>%
+  group_by(sink_site) %>%
+  summarise(accuracy = sum(accurate) / n())
+```
+
+Overall, these are about what I would expect. The accuracy for public sites is
+slightly better than random chance (which should produce ~25% accuracy), but
+not by much.
+
+### Effect of sampling delay
+
+I'll explore the effect of sampling delay on matching accuracy. First I'll look
+at the full set of matching attempts.
+
+```{r}
+matches %>%
+  mutate(delay = sink_timepoint - source_timepoint) %>%
+  group_by(delay) %>%
+  summarise(accuracy = sum(accurate) / n()) %>%
+  ungroup() %>%
+  ggplot(aes(x = delay, y = accuracy)) +
+    geom_line() +
+    geom_smooth(method = "loess") +
+    labs(title = "SourceTracker matching accuracy by sampling delay",
+         subtitle = "For all query samples",
+         caption = "Sampling delay is query time point minus reference time point",
+         x = "Sampling delay",
+         y = "Matching accuracy")
+```
+
+There's little clear effect of delay on matching accuracy.
+
+I'll visualise the same results, but further broken down by query site.
+
+```{r}
+matches %>%
+  mutate(delay = sink_timepoint - source_timepoint) %>%
+  group_by(sink_site, delay) %>%
+  summarise(accuracy = sum(accurate) / n()) %>%
+  ungroup() %>%
+  mutate_at("sink_site", str_to_sentence) %>%
+  ggplot(aes(x = delay, y = accuracy)) +
+    geom_line() +
+    geom_smooth(method = "loess") +
+    facet_wrap(~ sink_site, ncol = 1) +
+    labs(title = "SourceTracker matching accuracy by sampling delay",
+         subtitle = "Broken down by query site",
+         caption = "Sampling delay is query time point minus reference time point",
+         x = "Sampling delay",
+         y = "Matching accuracy")
+```
+
+Again, if there is an effect here, it's very small.
+
+### Diurnality effect
+
+I'll now examine whether the time of day at which the query and reference
+samples were taken affects matching accuracy.
+
+```{r}
+matches %>%
+  left_join(metadata %>%
+              select(source_timepoint = sink_timepoint, source_time = sink_time) %>% 
+              distinct()) %>%
+  group_by(sink_site, source_time, sink_time) %>% 
+  summarise(accuracy = sum(accurate) / n()) %>%
+  ungroup() %>%
+  mutate_at(c("sink_site", "sink_time", "source_time"), str_to_sentence) %>%
+  mutate(accuracy_lab = str_c(signif(accuracy, 2), "%")) %>%
+  ggplot(aes(x = sink_site, y = accuracy, fill = sink_time, label = accuracy_lab)) +
+    geom_col(position = "dodge") +
+    geom_bar_text(position = "dodge") +
+    facet_wrap(~ source_time, ncol = 1) +
+    labs(title = "SourceTracker matching accuracy",
+         subtitle = "Broken down by query site, query time and source time",
+         x = "Query site",
+         y = "Accuracy",
+         fill = "Query time")
+```
+
+For the household sites at least, this is broadly consistent with my results from
+the Watanabe method matching.

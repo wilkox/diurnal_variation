@@ -1,0 +1,47 @@
+---
+title: Bray-Curtis distances between skin and surface samples from the same vs different locations
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(broom)
+```
+
+For the purpose of reporting in the manuscript, I want to test whether the
+Bray-Curtis distances between skin and surface sites from the same location are
+significantly smaller than those between skin and surface sites from different
+locations. I'll use a Mann-Whitney test for this.
+
+```{r}
+metadata <- read_tsv("../metadata/metadata.tsv")
+read_tsv("../bc_matching/bc_distances.tsv") %>%
+  left_join(metadata %>% 
+              select(sample, location, type) %>%
+              rename_all(~ str_c("query_", .))) %>%
+  filter(query_type == "skin") %>%
+  left_join(metadata %>% 
+              select(sample, site, location, type) %>%
+              rename_all(~ str_c("reference_", .))) %>%
+  filter(reference_type %in% c("household surface", "public surface")) %>%
+  mutate(is_same_location = query_location == reference_location) %>%
+  select(query_sample, reference_sample, reference_site, is_same_location,
+         distance) %>%
+  nest(data = c(query_sample, reference_sample, is_same_location, distance)) %>%
+  mutate(mw = map(data, ~ wilcox.test(distance ~ is_same_location, data = .x))) %>%
+  mutate_at("mw", map, tidy) %>%
+  select(-data) %>%
+  unnest(mw) %>%
+  mutate(is_significant = p.value < 0.05)
+```

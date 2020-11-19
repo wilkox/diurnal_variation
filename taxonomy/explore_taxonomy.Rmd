@@ -1,0 +1,301 @@
+---
+title: Explore taxonomy
+author: David Wilkins
+date: Last updated `r lubridate::today()`
+output:
+  html_document:
+    toc: true
+    theme: readable
+---
+
+```{r global_options, include = FALSE}
+library(knitr)
+opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r message = FALSE}
+library(tidyverse)
+library(printr)
+library(ggfittext)
+library(wilkoxmisc)
+library(ggtext)
+```
+
+The purpose of this analysis is to gain an overview of the taxonomic
+composition of the samples.
+
+```{r}
+abundances <- read_tsv("../abundances/species_abundances_decontaminated.tsv")
+```
+
+# Overview of domains
+
+I'll find the domain-level composition of each site and of the full dataset.
+
+```{r}
+abundances %>%
+  count(domain, wt = abundance, name = "abundance") %>%
+  mutate(percentage = 100 * abundance / sum(abundance))
+```
+
+Unsurprisingly, the samples are dominated by bacteria.
+
+```{r}
+abundances %>%
+  count(sample, type, domain, wt = abundance, name = "abundance") %>%
+  group_by(type, domain) %>%
+  summarise(mean_abundance = mean(abundance) %>% signif(2),
+            sd_abundance = sd(abundance) %>% signif(2)) %>%
+  ungroup()
+```
+
+There's some variation between sample types, but not enough to suggest any
+meaningful differences at the domain level.
+
+```{r}
+domain_abundances <- abundances %>%
+  count(sample, site, domain, wt = abundance, name = "abundance") %>%
+  group_by(site, domain) %>%
+  summarise(mean_abundance = mean(abundance) %>% signif(2),
+            sd_abundance = sd(abundance) %>% signif(2)) %>%
+  ungroup() %>%
+  mutate_at("site", str_to_sentence)
+
+domain_abundances
+
+ggplot(domain_abundances, aes(x = domain, y = mean_abundance, 
+                              label = str_c(mean_abundance, "%"))) +
+  geom_col() +
+  geom_bar_text() +
+  facet_wrap(~ site) +
+  labs(title = "Mean abundance of each domain at each site",
+       x = "Domain",
+       y = "Mean relative abundance (%)")
+```
+
+Again, there is some variation between sites, but nothing to get excited about.
+
+# Taxonomic composition of skin samples
+
+Let's take a look at the taxonomic composition of the skin sites. I'll
+aggregate at the family level.
+
+```{r}
+abundances %>%
+  filter(type == "skin") %>%
+  mutate(family = fct_lump(family, n = 11, w = abundance)) %>%
+  mutate_at("family", fct_relevel, "Other", after = Inf) %>%
+  count(site, location, timepoint, family, wt = abundance, name = "abundance") %>%
+  mutate_at("family", binom) %>%
+  mutate_at(c("site", "location"), str_to_sentence) %>%
+  ggplot(aes(x = timepoint, y = abundance, fill = family)) +
+    geom_col(position = "stack") +
+    facet_grid(site ~ location, scales = "free_x") +
+    scale_fill_brewer(palette = "Set3") +
+    labs(title = "Taxonomic composition of skin sites",
+         x = "Time point",
+         y = "Relative abundance (%)",
+         fill = "Family") +
+    theme(legend.text = element_markdown())
+```
+
+Very nice! We can clearly see the individual microbiomes, the consistency
+between left and right palms, and the dominance of familiar skin taxa. Some
+quick impressions of these taxonomic profiles:
+
+- *Propionibacteriaceae* are higher than we saw in the previous 16S based
+  study, consistent with the note that the primers used in that study may miss
+  *Actinobacteria*
+- *Moraxellaceae*, despite being in the top 11, are less abundant than I would
+  have thought – perhaps another case of primer bias?
+- The abundant *Gordoniaceae* in residence 3 is consistent with this being an
+  individual-specific taxon rather than a contaminant, as I briefly suspected
+  during the contaminant analysis
+- Very interesting how *Dietziaceae* seems to come and go in residence 3. A
+  transient on the occupant's hands?
+- The high abundance of *Siphoviridae* is interesting, certainly from a
+  microbial predation perspective, but probably not so much in terms of the
+  human and pan-microbiome
+
+Let's have a look at how these samples break down according to Dunn et al.'s
+list of indicator families.
+
+```{r}
+dunn <- tribble(
+                   ~family , ~source             ,
+  "Propionibacteriaceae"   , "human skin"        ,
+  "Staphylococcaceae"      , "human skin"        ,
+  "Corynebacteriaceae"     , "human skin"        ,
+  "Pasteurellaceae"        , "human oral cavity" ,
+  "Fusobacteriaceae"       , "human oral cavity" ,
+  "Veillonellaceae"        , "human oral cavity" ,
+  "Neisseriaceae"          , "human oral cavity" ,
+  "Campylobacteraceae"     , "human oral cavity" ,
+  "Leptotrichiaceae"       , "human oral cavity" ,
+  "Actinomycetaceae"       , "human oral cavity" ,
+  "Prevotellaceae"         , "human oral cavity" ,
+  "Bacteroidaceae"         , "human stool"       ,
+  "Rikenellaceae"          , "human stool"       ,
+  "Ruminococcaceae"        , "human stool"       ,
+  "Lachnospiraceae"        , "human stool"       ,
+  "Enterobacteriaceae"     , "leaf"              ,
+  "Flexibacteraceae"       , "leaf"              ,
+  "Deinococcaceae"         , "leaf"              ,
+  "Acidobacteria"          , "soil"              ,
+  "Bradyrhizobiaceae"      , "soil"              ,
+  "Hyphomicrobiaceae"      , "soil"              ,
+  "Sinobacteraceae"        , "soil"
+)
+
+abundances %>%
+  left_join(dunn) %>%
+  filter(type == "skin") %>%
+  mutate(source = fct_explicit_na(source, "Unknown")) %>%
+  count(site, location, timepoint, source, wt = abundance, name = "abundance") %>%
+  mutate_at(c("location", "site", "source"), str_to_sentence) %>%
+  ggplot(aes(x = timepoint, y = abundance, fill = source)) +
+    geom_col(position = "stack") +
+    facet_grid(site ~ location, scales = "free_x") +
+    labs(title = "Sources of skin microbiota",
+         x = "Time point",
+         y = "Relative abundance (%)",
+         fill = "Source")
+```
+
+No surprise here: where the source is known, it's overwhelmingly human skin.
+
+# Taxonomic composition of household surface samples
+
+Let's repeat the same analysis for the household surface sites.
+
+```{r}
+abundances %>%
+  filter(type == "household surface") %>%
+  mutate(family = fct_lump(family, n = 11, w = abundance)) %>%
+  mutate_at("family", fct_relevel, "Other", after = Inf) %>%
+  count(site, location, timepoint, family, wt = abundance, name = "abundance") %>%
+  mutate_at("family", binom) %>%
+  mutate_at(c("site", "location"), str_to_sentence) %>%
+  ggplot(aes(x = timepoint, y = abundance, fill = family)) +
+    geom_col(position = "stack") +
+    facet_grid(site ~ location, scales = "free_x") +
+    scale_fill_brewer(palette = "Set3") +
+    labs(title = "Taxonomic composition of household surface sites",
+         x = "Time point",
+         y = "Relative abundance (%)",
+         fill = "Family") +
+    theme(legend.text = element_markdown())
+```
+
+Beautiful! Some shared microbiome between the skin and surface samples is
+apparent even with this course view. 
+
+Let's repeat the source analysis based on the Dunn et al. families.
+
+```{r}
+abundances %>%
+  left_join(dunn) %>%
+  filter(type == "household surface") %>%
+  count(site, location, timepoint, source, wt = abundance, name = "abundance") %>%
+  mutate_at(c("location", "site", "source"), str_to_sentence) %>%
+  ggplot(aes(x = timepoint, y = abundance, fill = source)) +
+    geom_col(position = "stack") +
+    facet_grid(site ~ location, scales = "free_x") +
+    labs(title = "Sources of household surface microbiota",
+         x = "Time point",
+         y = "Relative abundance (%)",
+         fill = "Source")
+```
+
+Resident 1 seems to enjoy licking their bed headboard, otherwise this confirms
+the importance of human skin as a source of surface microbiota.
+
+# Taxonomic composition of public surface samples
+
+Finally, lets take a look at the public surfaces.
+
+```{r}
+abundances %>%
+  filter(type == "public surface") %>%
+  mutate(family = fct_lump(family, n = 11, w = abundance)) %>%
+  mutate_at("family", fct_relevel, "Other", after = Inf) %>%
+  count(site, location, timepoint, family, wt = abundance, name = "abundance") %>%
+  mutate_at("family", binom) %>%
+  mutate_at(c("site", "location"), str_to_sentence) %>%
+  ggplot(aes(x = timepoint, y = abundance, fill = family)) +
+    geom_col(position = "stack") +
+    facet_grid(site ~ location, scales = "free_x") +
+    scale_fill_brewer(palette = "Set3") +
+    labs(title = "Taxonomic composition of public surface sites",
+         x = "Time point",
+         y = "Relative abundance (%)",
+         fill = "Family") +
+    theme(legend.text = element_markdown())
+```
+
+A bit more variety here, but still that clear skin signature in *P. acnes*.
+Let's look at the Dunn families:
+
+```{r}
+abundances %>%
+  left_join(dunn) %>%
+  filter(type == "public surface") %>%
+  count(site, location, timepoint, source, wt = abundance, name = "abundance") %>%
+  mutate_at(c("location", "site", "source"), str_to_sentence) %>%
+  ggplot(aes(x = timepoint, y = abundance, fill = source)) +
+    geom_col(position = "stack") +
+    facet_grid(site ~ location, scales = "free_x") +
+    labs(title = "Sources of public surface microbiota",
+         x = "Time point",
+         y = "Relative abundance (%)",
+         fill = "Source")
+```
+
+A bit more of a vegetation signature, unsurprising for outdoors, but still
+dominated by that human skin signature, which makes sense for handrail sites.
+
+# Summary taxonomic plot for publication
+
+I want to include in the manuscript a figure summarising the family composition
+for all sites, locations and time points, so I'll generate and save this now.
+
+```{r}
+abundances %>%
+  mutate(family = fct_lump(family, n = 11, w = abundance)) %>%
+  mutate_at("family", fct_relevel, "Other", after = Inf) %>%
+  count(site, location, day, time, family, wt = abundance, name = "abundance") %>%
+  mutate_at("family", binom) %>%
+  mutate_at("site", fct_relevel, "left palm", "right palm", "bed headboard", 
+                                 "door knob", "park/campus handrail", 
+                                 "subway exit handrail") %>%
+  mutate_at(c("site", "location"), fct_relabel, str_to_sentence) %>%
+  mutate_at("site", fct_relabel, str_wrap, 12) %>% 
+  mutate(day = day + if_else(time == "morning", 0, 0.5)) %>%
+  ggplot(aes(x = day, y = abundance, fill = family)) +
+    geom_col(position = "stack") +
+    facet_grid(site ~ location, scales = "free_x") +
+    scale_fill_brewer(palette = "Set3") +
+    labs(x = "Day",
+         y = "Relative abundance (%)",
+         fill = "Family") +
+    theme_classic() %+replace% theme(
+      legend.text = element_markdown()
+    ) +
+    scale_x_continuous(breaks = 1:10)
+
+ggsave("families_figure.png", width = 8, height = 6, dpi = 300)
+```
+
+## *Propionibacteriaceae* abundance
+
+For the manuscript, I'd like to know the average abundance of
+*Propionibacteriaceae* across all skin samples.
+
+```{r}
+abundances %>%
+  filter(type == "skin") %>%
+  filter(family == "Propionibacteriaceae") %>%
+  count(sample, wt = abundance) %>%
+  summarise(mean(n), sd(n))
+```
+
